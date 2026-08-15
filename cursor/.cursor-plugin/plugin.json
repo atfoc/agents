@@ -1,0 +1,6 @@
+{
+  "name": "agents",
+  "description": "The scout, worker and thinker subagents, plus the make-plan and implement-plan skills.",
+  "version": "1.0.0",
+  "author": { "name": "Peđa Trifunov" }
+}
