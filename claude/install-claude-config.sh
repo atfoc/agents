@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# install-cursor-config.sh
+# install-claude-config.sh
 #
-# Copies (or symlinks) this repo's Cursor agent and skill definitions into a
-# target project's .cursor/ directory. Every item this repo ships is
+# Copies this repo's Claude agent and skill definitions into a target
+# project's .claude/ directory. Every item this repo ships is
 # unconditionally replaced in the target; everything else already living in
-# the target's .cursor/ is left completely untouched.
+# the target's .claude/ is left completely untouched.
 #
 # Run with -h/--help for full usage.
 
@@ -19,44 +19,44 @@ SCRIPT_NAME="$(basename "$0")"
 
 print_usage() {
   cat <<EOF
-Usage: ${SCRIPT_NAME} [--target DIR] [--symlink] [--dry-run] [--uninstall]
+Usage: ${SCRIPT_NAME} [--target DIR | --target-home] [--dry-run] [--uninstall]
        ${SCRIPT_NAME} -h | --help
 
-Installs this repo's Cursor agent and skill definitions into a target
-project's .cursor/ directory:
+Installs this repo's Claude agent and skill definitions into a target
+project's .claude/ directory:
 
-  <target>/.cursor/agents/scout.md
-  <target>/.cursor/agents/thinker.md
-  <target>/.cursor/agents/worker.md
-  <target>/.cursor/skills/make-plan/SKILL.md
-  <target>/.cursor/skills/implement-plan/SKILL.md
-  <target>/.cursor/skills/research/SKILL.md
+  <target>/.claude/agents/scout.md
+  <target>/.claude/agents/thinker.md
+  <target>/.claude/agents/worker.md
+  <target>/.claude/skills/make-plan/SKILL.md
+  <target>/.claude/skills/implement-plan/SKILL.md
+  <target>/.claude/skills/research/SKILL.md
 
 Every item this repo ships is ALWAYS replaced in the target -- whatever is
 currently there (a real file, a real directory, or a symlink) -- with no
 prompting and no backup. Anything else already present under the target's
-.cursor/ (your own agents, skills, rules, plans, etc.) is never read or
-written.
+.claude/ (your own agents and skills, plus Claude Code's own sessions/,
+projects/, history.jsonl, settings.json, etc.) is never read or written.
 
 Options:
-  --target DIR   Install into DIR/.cursor instead of \$PWD/.cursor. DIR does
-                 not need to exist yet; it (and .cursor/agents, .cursor/skills)
+  --target DIR   Install into DIR/.claude instead of \$PWD/.claude. DIR does
+                 not need to exist yet; it (and .claude/agents, .claude/skills)
                  will be created as needed. Refuses to run if DIR resolves to
                  a path inside this repo (that would let the repo install
-                 into itself).
+                 into itself). Cannot be combined with --target-home.
 
-  --symlink      Install agents and skills as symlinks that point back into
-                 this repo, instead of copying them. Off by default; the
-                 default is to copy so the target is self-contained.
+  --target-home  Install into \$HOME/.claude, the personal location that
+                 applies to all your projects. Cannot be combined with
+                 --target.
 
   --dry-run      Print what would happen (install/updated/unchanged/removed/
                  absent, one line per item, prefixed with "[dry-run] ") but
                  do not create, modify, or remove anything on disk.
 
   --uninstall    Remove exactly this repo's six items from the target's
-                 .cursor/agents and .cursor/skills, then try to rmdir those
+                 .claude/agents and .claude/skills, then try to rmdir those
                  two directories (silently left in place if the project has
-                 its own entries in them). Nothing else under .cursor/ is
+                 its own entries in them). Nothing else under .claude/ is
                  touched.
 
   -h, --help     Show this help and exit.
@@ -64,7 +64,8 @@ Options:
 Exit codes:
   0   success
   1   fatal error or usage error (unknown flag, missing --target argument,
-      target resolves inside this repo, this repo's own agents/ missing)
+      both --target and --target-home given, target resolves inside this
+      repo, this repo's own agents/ missing)
 
 Examples:
   # Install (copy) into the current project
@@ -73,8 +74,8 @@ Examples:
   # Install into another project by path
   ${SCRIPT_NAME} --target ~/code/some-project
 
-  # Keep the target's copies live-linked to this repo instead of copied
-  ${SCRIPT_NAME} --target ~/code/some-project --symlink
+  # Install into your personal ~/.claude, used across all projects
+  ${SCRIPT_NAME} --target-home
 
   # See what would change without touching anything
   ${SCRIPT_NAME} --target ~/code/some-project --dry-run
@@ -166,7 +167,8 @@ resolve_target() {
 # ---------------------------------------------------------------------------
 
 TARGET="$PWD"
-MODE="copy"
+TARGET_SET=0
+HOME_SET=0
 DRY_RUN=0
 UNINSTALL=0
 
@@ -177,10 +179,11 @@ while [ $# -gt 0 ]; do
         usage_error "--target requires an argument"
       fi
       TARGET="$2"
+      TARGET_SET=1
       shift 2
       ;;
-    --symlink)
-      MODE="symlink"
+    --target-home)
+      HOME_SET=1
       shift
       ;;
     --dry-run)
@@ -201,6 +204,15 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+if [ "$TARGET_SET" -eq 1 ] && [ "$HOME_SET" -eq 1 ]; then
+  usage_error "--target and --target-home are mutually exclusive"
+fi
+
+if [ "$HOME_SET" -eq 1 ]; then
+  [ -n "${HOME:-}" ] || die "--target-home given but \$HOME is not set"
+  TARGET="$HOME"
+fi
+
 if [ -z "$TARGET" ]; then
   usage_error "--target requires a non-empty argument"
 fi
@@ -215,7 +227,7 @@ REPO_ROOT="$(dirname "$SRC_ROOT")"
 
 [ -d "$SRC_ROOT/agents" ] || die "expected '$SRC_ROOT/agents' to exist but it does not; this script must stay in place alongside the repo's agents/ and skills/ directories"
 
-DEST="$TARGET/.cursor"
+DEST="$TARGET/.claude"
 
 # Guard: refuse to install the repo into itself.
 TARGET_RESOLVED="$(resolve_target "$TARGET")"
@@ -252,27 +264,16 @@ status_line() {
 
 # install_item KIND SRC_REAL DEST LABEL
 # KIND is "file" or "dir". SRC_REAL must already be symlink-resolved (see
-# the cp -R hazard note below). Always leaves DEST holding a fresh copy (or
-# symlink) of SRC_REAL, replacing whatever was there.
+# the cp -R hazard note below). Always leaves DEST holding a fresh copy of
+# SRC_REAL, replacing whatever was there.
 install_item() {
   local kind="$1" src_real="$2" dest="$3" label="$4"
   local status
 
-  if [ "$MODE" = "symlink" ]; then
-    # In symlink mode a link at dest is the intended end state, so an
-    # already-correct link is genuinely unchanged. `ln -sfn` below writes an
-    # absolute path, so readlink returns src_real verbatim.
-    if [ -L "$dest" ] && [ "$(readlink "$dest")" = "$src_real" ]; then
-      status="unchanged"
-    elif [ -e "$dest" ] || [ -L "$dest" ]; then
-      status="updated"
-    else
-      status="install"
-    fi
-  elif [ -L "$dest" ]; then
-    # Copy mode: any symlink here is replaced by a real file/dir, so this is
-    # always a change -- including a link whose target matches byte-for-byte.
-    # Tested before -e, which follows the link and would report "unchanged".
+  if [ -L "$dest" ]; then
+    # Any symlink here is replaced by a real file/dir, so this is always a
+    # change -- including a link whose target matches byte-for-byte. Tested
+    # before -e, which follows the link and would report "unchanged".
     # This also covers a dangling link.
     status="updated"
   elif [ -e "$dest" ]; then
@@ -297,11 +298,12 @@ install_item() {
     # Always remove first: `cp -R src existing_dir` nests a duplicate copy
     # inside existing_dir instead of replacing it, and leaves stale files
     # behind. Removing dest first makes cp (re)create it fresh every time,
-    # for both files and directories.
+    # for both files and directories. It also means a symlink at dest is
+    # replaced, rather than written through -- `cp` over a symlink modifies
+    # the link's target file, which would corrupt a file we were never asked
+    # to touch.
     rm -rf "$dest"
-    if [ "$MODE" = "symlink" ]; then
-      ln -sfn "$src_real" "$dest"
-    elif [ "$kind" = "file" ]; then
+    if [ "$kind" = "file" ]; then
       cp "$src_real" "$dest"
     else
       cp -R "$src_real" "$dest"
@@ -325,8 +327,7 @@ uninstall_item() {
 }
 
 # ---------------------------------------------------------------------------
-# Main flow: agents (*.md files), then skills (directories, following
-# symlinks -- cursor/skills/* are relative symlinks into claude/skills/).
+# Main flow: agents (*.md files), then skills (directories).
 # ---------------------------------------------------------------------------
 
 for kind in agents skills; do

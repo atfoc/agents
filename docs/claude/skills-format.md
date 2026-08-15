@@ -5,7 +5,8 @@ use the skill, and Markdown instructions it follows when the skill runs. Support
 sit alongside it and are loaded only when needed.
 
 The skills in this repo live in `claude/skills/` (`make-plan/SKILL.md`,
-`implement-plan/SKILL.md`) and are installed into a project's `.claude/skills/`.
+`implement-plan/SKILL.md`, `research/SKILL.md`) and are installed into a project's
+`.claude/skills/`.
 
 ## Directory layout
 
@@ -19,7 +20,7 @@ my-skill/
 ```
 
 Only `SKILL.md` is required. A skill with nothing else is a normal, complete skill — that is
-what both skills in this repo are.
+what every skill in this repo is.
 
 ## Where skills live
 
@@ -111,7 +112,7 @@ Available inside the skill body:
 | `${CLAUDE_PLUGIN_ROOT}` | Plugin install directory (plugin skills only). |
 | `${CLAUDE_PLUGIN_DATA}` | Plugin persistent data directory (plugin skills only). |
 
-Both skills in this repo read their input loosely instead — "the plan is whatever the user
+The skills in this repo read their input loosely instead — "the plan is whatever the user
 pointed at: the plan already in this conversation, a file, or the skill argument" — which is
 the right call when the input may arrive as conversation rather than as an argument.
 

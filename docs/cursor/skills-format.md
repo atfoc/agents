@@ -6,8 +6,8 @@ the skill is and when it applies, plus Markdown instructions the agent follows. 
 templates, and reference documents can sit beside it.
 
 The skills in this repo live in `cursor/skills/` (`make-plan/SKILL.md`,
-`implement-plan/SKILL.md`) and are installed into a project's `.cursor/skills/` by
-`cursor/install-cursor-config.sh`.
+`implement-plan/SKILL.md`, `research/SKILL.md`) and are installed into a project's
+`.cursor/skills/` by `cursor/install-cursor-config.sh`.
 
 ## Directory layout
 
@@ -20,7 +20,7 @@ my-skill/
 ```
 
 Only `SKILL.md` is required. A skill that is just instructions is a complete skill — that is
-what both skills in this repo are.
+what every skill in this repo is.
 
 ## Where skills live
 
@@ -78,8 +78,8 @@ re-deciding anything.
 
 Cursor documents no formal syntax for passing arguments to a skill. Write skills so they read
 their input from the conversation and from what the user pointed at, rather than assuming a
-positional argument arrives. Both skills in this repo do that — "the plan is whatever the user
-pointed at: the plan already in this conversation, a file, or the skill argument" — and both say
+positional argument arrives. Every skill in this repo does that — "the plan is whatever the user
+pointed at: the plan already in this conversation, a file, or the skill argument" — and each says
 what to do when the input is missing.
 
 ## Supporting files

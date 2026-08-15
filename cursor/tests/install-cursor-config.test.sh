@@ -440,6 +440,68 @@ test_14_syntax_gate() {
   fi
 }
 
+test_15_symlink_at_destination_replaced_in_copy_mode() {
+  local fixture project before_agent before_skill after_agent after_skill
+  fixture="$(new_fixture_dir)"
+  project="$(new_project_dir)"
+  make_fixture "$fixture"
+
+  mkdir -p "$project/.cursor/agents"
+  mkdir -p "$project/.cursor/skills"
+
+  # A real file, byte-identical to the fixture's source, with a symlink at
+  # the destination pointing at it -- the exact shape the repo's own targets
+  # were left in after commit e3813ab.
+  cp "$fixture/cursor/agents/scout.md" "$project/link-target-agent.md"
+  ln -s "$project/link-target-agent.md" "$project/.cursor/agents/scout.md"
+
+  # Same shape for a skill directory: a real dir, byte-identical to the
+  # fixture's resolved (post-symlink) source, with a symlink at dest.
+  mkdir -p "$project/link-target-skill"
+  cp "$fixture/claude/skills/make-plan/SKILL.md" "$project/link-target-skill/SKILL.md"
+  ln -s "$project/link-target-skill" "$project/.cursor/skills/make-plan"
+
+  before_agent="$(cksum "$project/link-target-agent.md")"
+  before_skill="$(cksum "$project/link-target-skill/SKILL.md")"
+
+  run_installer "$fixture/cursor/install-cursor-config.sh" --target "$project"
+  assert_eq "0" "$INSTALLER_STATUS" "exit status"
+
+  assert_file "$project/.cursor/agents/scout.md" "symlink must be replaced by a real file"
+  assert_not_symlink "$project/.cursor/agents/scout.md"
+  assert_dir "$project/.cursor/skills/make-plan" "symlink must be replaced by a real directory"
+  assert_not_symlink "$project/.cursor/skills/make-plan"
+
+  assert_contains "$INSTALLER_OUT" "updated agents/scout.md" "byte-identical symlink target must not be reported unchanged in copy mode"
+  assert_contains "$INSTALLER_OUT" "updated skills/make-plan" "byte-identical symlink target must not be reported unchanged in copy mode"
+
+  after_agent="$(cksum "$project/link-target-agent.md")"
+  after_skill="$(cksum "$project/link-target-skill/SKILL.md")"
+  assert_eq "$before_agent" "$after_agent" "installer must never write through the old symlink's target file"
+  assert_eq "$before_skill" "$after_skill" "installer must never write through the old symlink's target file"
+}
+
+test_16_symlink_mode_rerun_reports_unchanged() {
+  local fixture project label
+  fixture="$(new_fixture_dir)"
+  project="$(new_project_dir)"
+  make_fixture "$fixture"
+
+  run_installer "$fixture/cursor/install-cursor-config.sh" --target "$project" --symlink
+  assert_eq "0" "$INSTALLER_STATUS" "first run exit status"
+
+  run_installer "$fixture/cursor/install-cursor-config.sh" --target "$project" --symlink
+  assert_eq "0" "$INSTALLER_STATUS" "second run exit status"
+
+  for label in $LABELS; do
+    assert_contains "$INSTALLER_OUT" "unchanged $label" "missing unchanged line for $label on symlink-mode rerun"
+  done
+  assert_contains "$INSTALLER_OUT" "0 install, 0 updated, 5 unchanged, 0 removed, 0 absent" "summary line"
+
+  assert_symlink "$project/.cursor/agents/scout.md"
+  assert_symlink "$project/.cursor/skills/make-plan"
+}
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -458,6 +520,8 @@ run_test test_11_symlink_mode_produces_symlinks
 run_test test_12_self_install_guard
 run_test test_13_usage_errors
 run_test test_14_syntax_gate
+run_test test_15_symlink_at_destination_replaced_in_copy_mode
+run_test test_16_symlink_mode_rerun_reports_unchanged
 
 echo
 echo "-----------------------------------------------"

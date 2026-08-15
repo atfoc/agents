@@ -5,7 +5,7 @@ description: Execute an implementation plan. Splits it into focused subtasks gro
 
 # Implement a plan
 
-Take a plan and build it: split it into subtasks, group them into ordered waves, then run each wave as parallel `worker` subagents.
+Take a plan and build it: split it into subtasks, group them into ordered waves, then run each wave as parallel subagents of the custom type `worker`.
 
 The plan is whatever the user pointed at: the plan already in this conversation, a file, or the skill argument. If there is no plan, say so and stop — this skill executes a plan, it does not invent one.
 
@@ -48,10 +48,10 @@ If two tasks need the same context, repeat it in both prompts. Repetition is che
 
 For each wave, in order:
 
-1. Launch **one `worker` subagent per task, all in a single message**, so the whole wave runs in parallel.
+1. Launch **one subagent of the custom type `worker` per task, all in a single message**, so the whole wave runs in parallel. Spawn that custom type by name — never a generic or built-in agent type — and never pass a model or effort override on the spawn call. The `worker` type pins its own model and effort; an override on the call outranks them and silently replaces the agent this skill is built around.
 2. Wait for every task in the wave to finish. The wave is a barrier — never start the next wave while one is still running.
 3. Read the reports. Check the workers stayed inside their files, and that what they built actually matches what the next wave assumes.
-4. If a task failed or came back short: fix it before moving on — re-run it as a new `worker` with a sharper prompt, or do the remaining piece yourself if it is small. Never carry a broken task into the next wave.
+4. If a task failed or came back short: fix it before moving on — re-run it as a new subagent of the custom type `worker` with a sharper prompt, or do the remaining piece yourself if it is small. Never carry a broken task into the next wave.
 5. If a report invalidates the split — an unforeseen dependency, a file two tasks both need — re-plan the remaining waves before continuing, and tell the user what changed.
 
 Then move to the next wave. Repeat until every wave is done.

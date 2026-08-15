@@ -17,7 +17,9 @@ Read the spec and list the questions that must be answered before the spec can b
 
 ## Step 2 — Send the scouts
 
-Launch `scout` subagents to answer them. **Send them all in one message so they run in parallel.**
+Answer them by spawning subagents of the custom type `scout`. **Send them all in one message so they run in parallel.**
+
+Spawn that custom type by name — never a generic or built-in agent type — and never pass a model or effort override on the spawn call. The `scout` type pins its own model and effort; an override on the call outranks them and silently replaces the agent this skill is built around.
 
 Always send:
 
@@ -28,7 +30,7 @@ Then send **one scout per remaining question**. Use as many as the questions dem
 
 Every scout prompt must be self-contained. A scout sees none of this conversation, so give it: the relevant part of the spec, the one question or goal it owns, and what its answer must contain (paths, line numbers, signatures, exact values). Vague scouts return vague summaries and the plan pays for it.
 
-If a scout comes back thin or contradicts another, send another scout with a sharper question before you plan on top of it.
+If a scout comes back thin or contradicts another, send another subagent of the custom type `scout` with a sharper question before you plan on top of it.
 
 ## Step 3 — Write the plan yourself
 
