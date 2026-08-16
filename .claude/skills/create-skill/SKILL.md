@@ -15,7 +15,7 @@ Read `${CLAUDE_PROJECT_DIR}/claude/skills/create-claude-skill/SKILL.md`, and its
 
 ## Step 2 — Port it to Cursor with a worker subagent
 
-Launch a `worker` subagent to port the skill you just wrote. Its prompt must contain only:
+Launch a subagent of type `worker` to port the skill you just wrote. Its prompt must contain only:
 
 - The path(s) of the skill file(s) you wrote in Step 1, with an instruction to Read them.
 - An instruction to read `${CLAUDE_PROJECT_DIR}/claude/skills/create-cursor-skill/SKILL.md` and follow it.
