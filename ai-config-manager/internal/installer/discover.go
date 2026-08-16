@@ -56,8 +56,10 @@ func discoverAgents(srcRoot, dstRoot string) ([]Item, error) {
 }
 
 // discoverSkills lists the skills available under srcRoot/skills: every
-// entry which is (or resolves to, through a symlink) a directory. A loose
-// regular file directly under skills/ is skipped, whatever it is named.
+// entry which is (or resolves to, through a symlink) a directory that itself
+// contains a SKILL.md (or resolves to, through a symlink, a regular) file.
+// A loose regular file directly under skills/, or a directory without a
+// SKILL.md, is skipped, whatever it is named.
 func discoverSkills(srcRoot, dstRoot string) ([]Item, error) {
 	dir := filepath.Join(srcRoot, "skills")
 	entries, err := os.ReadDir(dir)
@@ -83,6 +85,17 @@ func discoverSkills(srcRoot, dstRoot string) ([]Item, error) {
 			return nil, fmt.Errorf("stat %s: %w", path, err)
 		}
 		if !info.IsDir() {
+			continue
+		}
+		skillMD, err := os.Stat(filepath.Join(path, "SKILL.md"))
+		if err != nil {
+			// No SKILL.md (or it's unreadable): this directory isn't a skill.
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			return nil, fmt.Errorf("stat %s: %w", filepath.Join(path, "SKILL.md"), err)
+		}
+		if !skillMD.Mode().IsRegular() {
 			continue
 		}
 		items = append(items, Item{

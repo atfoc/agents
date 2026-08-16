@@ -175,6 +175,24 @@ func TestDiscoverSkills_FiltersByKind(t *testing.T) {
 	}
 }
 
+func TestDiscoverSkills_DirWithoutSkillMdExcluded(t *testing.T) {
+	srcRoot := t.TempDir()
+	dstRoot := t.TempDir()
+
+	mustWriteFile(t, filepath.Join(srcRoot, "skills", "research", "SKILL.md"), "research skill")
+	// A directory under skills/ with no SKILL.md isn't a skill, no matter
+	// what else it contains.
+	mustWriteFile(t, filepath.Join(srcRoot, "skills", "not-a-skill", "notes.md"), "just notes")
+
+	items, err := discoverSkills(srcRoot, dstRoot)
+	if err != nil {
+		t.Fatalf("discoverSkills: %v", err)
+	}
+	if got := itemNames(items); len(got) != 1 || got[0] != "research" {
+		t.Fatalf("discoverSkills = %v, want [research]", got)
+	}
+}
+
 func TestDiscoverSkills_SortedByName(t *testing.T) {
 	srcRoot := t.TempDir()
 	dstRoot := t.TempDir()
