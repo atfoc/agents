@@ -11,6 +11,7 @@ import (
 	"os"
 
 	"github.com/atfoc/agents/ai-config-manager/internal/installer"
+	"github.com/atfoc/agents/ai-config-manager/internal/tui"
 )
 
 // errHelp is returned by parseArgs when the user asked for help (-h /
@@ -28,6 +29,7 @@ var errHelp = errors.New("help requested")
 // them the way they're actually meant to be used.
 func usage(w io.Writer) {
 	fmt.Fprint(w, `Usage: ai-config-manager -s DIR -t DIR [--dry-run]
+       ai-config-manager -i -s DIR -t DIR
        ai-config-manager -h | --help
 
 Installs agent and skill definitions from a source directory into a target
@@ -46,6 +48,13 @@ Options:
   -t, --target DIR   Directory to install agents/ and skills/ into. Created
                      if it does not exist. Required.
       --dry-run      Print what would happen but write nothing.
+  -i                 Choose what to install in an interactive terminal
+                     UI. Only -s and -t may be combined with it.
+      --agents       Install only agents.
+      --skills       Install only skills.
+      --filter NAME  Install only the item with this exact name. Must
+                     be used with --agents or --skills. NAME is the
+                     bare name: "scout", not "scout.md".
   -h, --help         Show this help and exit.
 
 Exit codes:
@@ -55,6 +64,8 @@ Exit codes:
 Examples:
   ai-config-manager -s ./claude -t ~/.claude
   ai-config-manager --source ./cursor --target ~/.cursor --dry-run
+  ai-config-manager -i -s ./claude -t ~/.claude
+  ai-config-manager -s ./claude -t ~/.claude --agents --filter scout
 `)
 }
 
@@ -77,6 +88,10 @@ func parseArgs(args []string) (installer.Options, error) {
 	fs.StringVar(&opts.Target, "target", "", "directory to install agents/ and skills/ into")
 	fs.StringVar(&opts.Target, "t", "", "shorthand for --target")
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "print what would happen but write nothing")
+	fs.BoolVar(&opts.OnlyAgents, "agents", false, "install only agents")
+	fs.BoolVar(&opts.OnlySkills, "skills", false, "install only skills")
+	fs.StringVar(&opts.Filter, "filter", "", "install only the item with this exact name")
+	fs.BoolVar(&opts.Interactive, "i", false, "choose what to install in an interactive terminal UI")
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -100,6 +115,36 @@ func parseArgs(args []string) (installer.Options, error) {
 		return installer.Options{}, errors.New("--target is required")
 	}
 
+	// --agents and --skills each restrict the run to a single kind; taken
+	// together they'd restrict to both kinds at once, which is the same as
+	// neither, and would also leave --filter's target kind ambiguous.
+	if opts.OnlyAgents && opts.OnlySkills {
+		return installer.Options{}, errors.New("--agents and --skills are mutually exclusive")
+	}
+	// --filter narrows within a kind; without --agents or --skills there is
+	// no kind to narrow within. Skipped when -i is set: in that case --filter
+	// is invalid regardless of --agents/--skills, and the check below names
+	// -i as the actual conflict instead of this more generic one.
+	if opts.Filter != "" && !opts.OnlyAgents && !opts.OnlySkills && !opts.Interactive {
+		return installer.Options{}, errors.New("--filter requires --agents or --skills")
+	}
+	// -i hands every choice to the interactive picker; combining it with any
+	// flag that pre-decides part of that choice would make it unclear which
+	// one wins, so -i accepts only -s and -t. Checked in a fixed order so the
+	// reported conflict is deterministic regardless of which flags are set.
+	if opts.Interactive {
+		switch {
+		case opts.DryRun:
+			return installer.Options{}, errors.New("-i cannot be combined with --dry-run")
+		case opts.OnlyAgents:
+			return installer.Options{}, errors.New("-i cannot be combined with --agents")
+		case opts.OnlySkills:
+			return installer.Options{}, errors.New("-i cannot be combined with --skills")
+		case opts.Filter != "":
+			return installer.Options{}, errors.New("-i cannot be combined with --filter")
+		}
+	}
+
 	return opts, nil
 }
 
@@ -120,6 +165,10 @@ func run(stdout, stderr io.Writer, args []string) int {
 		return 1
 	}
 
+	if opts.Interactive {
+		return runInteractive(stdout, stderr, opts)
+	}
+
 	res, err := installer.Run(opts)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
@@ -131,6 +180,54 @@ func run(stdout, stderr io.Writer, args []string) int {
 		return 1
 	}
 
+	return 0
+}
+
+// runInteractive drives the -i picker. It deliberately plans and hands the
+// plan to the UI rather than calling installer.Run: nothing may be written
+// before the user has had a chance to choose what to install.
+func runInteractive(stdout, stderr io.Writer, opts installer.Options) int {
+	// The picker reads keystrokes directly from the terminal, so a pipe or
+	// redirect on stdin can't drive it. Failing clearly here beats hanging
+	// waiting for input that will never come, or rendering garbage into
+	// whatever stdin actually is.
+	info, err := os.Stdin.Stat()
+	if err != nil || info.Mode()&os.ModeCharDevice == 0 {
+		fmt.Fprintln(stderr, "error: -i needs an interactive terminal (stdin is not a tty)")
+		return 1
+	}
+
+	res, err := installer.Plan(opts)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 1
+	}
+
+	out, err := tui.Run(res)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 1
+	}
+
+	if !out.Confirmed {
+		// The user quit without installing anything: that's not an error.
+		return 0
+	}
+
+	// The report is printed only now, after tui.Run has returned: the inline
+	// TUI erases its own last frame when it quits, so the report can't be
+	// printed while the picker is still the terminal's active frame - it
+	// would just be erased along with it.
+	if err := tui.RenderReport(stdout, out); err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 1
+	}
+
+	for _, item := range out.Applied {
+		if item.Err != nil {
+			return 1
+		}
+	}
 	return 0
 }
 

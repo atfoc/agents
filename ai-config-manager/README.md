@@ -41,7 +41,8 @@ go test ./...
 ## Usage
 
 ```
-ai-config-manager -s DIR -t DIR [--dry-run]
+ai-config-manager -s DIR -t DIR [--dry-run] [--agents | --skills] [--filter NAME]
+ai-config-manager -s DIR -t DIR -i
 ai-config-manager -h | --help
 ```
 
@@ -52,13 +53,120 @@ ai-config-manager -h | --help
 | `-s`, `--source DIR` | Directory holding the `agents/` and `skills/` to install from. Required. |
 | `-t`, `--target DIR` | Directory to install `agents/` and `skills/` into. Created if it does not exist. Required. |
 | `--dry-run` | Print what would happen but write nothing. No short form. |
+| `--agents` | Install only agents. Mutually exclusive with `--skills`. No short form. |
+| `--skills` | Install only skills. Mutually exclusive with `--agents`. No short form. |
+| `--filter NAME` | Install only the single item named `NAME`. Must be combined with `--agents` or `--skills`. No short form. |
+| `-i` | Open an interactive terminal UI to choose what to install. See [Interactive mode](#interactive-mode) below. No long form. |
 | `-h`, `--help` | Show help and exit 0. |
 
 `-s`/`--source` and `-t`/`--target` are both accepted; Go's `flag` package
 also accepts the single-dash long form (`-source`, `-target`). If a flag is
 given more than once, the last occurrence wins.
 
+`--agents` and `--skills` are mutually exclusive; passing both is a usage
+error.
+
+`--filter NAME` only makes sense alongside `--agents` or `--skills` — used
+on its own, with neither, it's a usage error, since there would be no scope
+to filter within. `NAME` is the bare item name, not a filename: an agent
+stored as `agents/scout.md` is named `scout`, so `--filter scout.md` does
+not match anything — the `.md` suffix is stripped before comparing, so
+agents and skills are named the same way. Matching is exact and
+case-sensitive: no prefixes, globs, or fuzzy matching. A `NAME` that matches
+nothing is a fatal error (exit 1) rather than a run that quietly installs
+nothing, since an exact name matching nothing is almost always a typo.
+
+`-i` only combines with `-s`/`-t`. Combining it with `--dry-run`,
+`--agents`, `--skills`, or `--filter` is a usage error — everything those
+flags do is chosen inside the UI instead.
+
 Exit codes: `0` on success, `1` on a usage error or a fatal error.
+
+### Examples
+
+```
+ai-config-manager -s ./claude -t ~/.claude
+ai-config-manager -s ./claude -t ~/.claude --dry-run
+ai-config-manager -i -s ./claude -t ~/.claude
+ai-config-manager -s ./claude -t ~/.claude --agents
+ai-config-manager -s ./claude -t ~/.claude --skills --filter research
+```
+
+## Interactive mode
+
+Passing `-i` opens a terminal UI for choosing what to install, instead of
+installing everything the source ships. It needs a real interactive
+terminal: if stdin is redirected or piped, it exits `1` with an error
+rather than hanging waiting for input.
+
+The UI renders inline, in the same terminal directly below where the
+command was run — it does not take over the screen or use the alternate
+screen buffer.
+
+There are two tabs, **Agents** and **Skills**. Within each tab, items are
+grouped under three headings:
+
+- **to update** — present in the target but different from the source.
+- **to install** — not present in the target yet.
+- **up to date** — byte-identical to the target already. These are shown
+  but cannot be selected, since installing an identical item would do
+  nothing.
+
+Selection is multi-select and shared across both tabs: agents and skills
+chosen in either tab are installed together in one go when you confirm.
+Each tab's label shows how many items are selected within it.
+
+The list scrolls when it's longer than the terminal, with `↑ N more` /
+`↓ N more` markers when there's more above or below the visible window.
+
+A search bar filters the current tab by a case-insensitive substring match
+on the item name. Each tab remembers its own search independently. This is
+a browse aid, and not the same thing as `--filter` above — `--filter` is an
+exact, case-sensitive match on one name that skips the UI entirely, while
+the search bar just narrows what's visible while you pick. Items filtered
+out of view stay selected.
+
+Pressing enter opens a confirmation box listing everything currently
+selected; the install only happens once you confirm it. After the install
+finishes and the UI exits, a report is printed — see
+[Interactive report](#interactive-report) below.
+
+### Keys
+
+| Key | Action |
+| --- | --- |
+| `j` / `k` (also ↓ / ↑) | Move the cursor down / up |
+| `h` / `l` (also ← / →) | Previous / next tab |
+| `space` | Select or deselect the item under the cursor |
+| `enter` | Install the current selection (opens a confirmation first) |
+| `/` | Open the search bar |
+| `esc` | Close the search bar if open, else cancel the confirmation if open, else quit |
+| `ctrl+c` | Quit at any time |
+
+While the search bar is open, `j`, `k`, `h`, `l`, and `space` type into the
+query instead of navigating — use the arrow keys to move the cursor while
+searching. `left`/`right`, `backspace`, `delete`, `home`/`end`, and the
+usual word-motions edit the query text. `enter` commits the search and
+closes the bar without starting an install, so a stray enter while typing
+can never trigger one. `esc` closes the search bar and clears the query.
+
+### Interactive report
+
+The interactive report differs from the [normal one](#output). Each
+selected item is marked one of three statuses:
+
+- **`installed`** — it was not present in the target before.
+- **`updated`** — it was present in the target and different.
+- **`failed`** — it could not be written, with the reason given.
+
+Failed items are listed first, then installed, then updated, alphabetically
+within each group. It ends with a summary line: `N installed, M updated,
+K failed`.
+
+Unlike a non-interactive run, which stops at the first write error, an
+interactive install does not stop at the first failure — every selected
+item is attempted and accounted for in the report. The command exits `1`
+if any item failed.
 
 ## Output
 

@@ -661,6 +661,200 @@ func TestResolveTarget_ExistingPathIsFullyResolved(t *testing.T) {
 	}
 }
 
+func TestPlan_EmptyTarget_AllItemsExistsFalse(t *testing.T) {
+	src := makeSourceTree(t)
+	dst := t.TempDir()
+
+	res, err := Plan(Options{Source: src, Target: dst})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	for _, it := range allItems(res) {
+		if it.Exists {
+			t.Errorf("%s %s Exists = true, want false", it.Kind, it.Name)
+		}
+	}
+}
+
+func TestPlan_PopulatedTarget_ExistsTrueEvenWhenContentDiffers(t *testing.T) {
+	src := makeSourceTree(t)
+	dst := t.TempDir()
+
+	if _, err := Run(Options{Source: src, Target: dst}); err != nil {
+		t.Fatalf("seed Run: %v", err)
+	}
+	// Change the source after seeding so a second Plan sees a target item
+	// that both already exists AND differs from the source — the exact
+	// combination (StatusUpdated, Exists true) the interactive "to update"
+	// group depends on.
+	mustWriteFile(t, filepath.Join(src, "agents", "scout.md"), "scout content v2")
+
+	res, err := Plan(Options{Source: src, Target: dst})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	scout, ok := findItem(res.Agents, "scout.md")
+	if !ok {
+		t.Fatalf("scout.md missing from Result: %+v", res.Agents)
+	}
+	if scout.Status != StatusUpdated {
+		t.Errorf("scout.md Status = %v, want StatusUpdated", scout.Status)
+	}
+	if !scout.Exists {
+		t.Errorf("scout.md Exists = false, want true")
+	}
+
+	// An unchanged item that was already installed must also report Exists
+	// true, since Exists tracks presence at Dst, not Status.
+	thinker, ok := findItem(res.Agents, "thinker.md")
+	if !ok {
+		t.Fatalf("thinker.md missing from Result: %+v", res.Agents)
+	}
+	if thinker.Status != StatusUnchanged {
+		t.Errorf("thinker.md Status = %v, want StatusUnchanged", thinker.Status)
+	}
+	if !thinker.Exists {
+		t.Errorf("thinker.md Exists = false, want true")
+	}
+
+	for _, it := range allItems(res) {
+		if !it.Exists {
+			t.Errorf("%s %s Exists = false, want true (target was fully seeded)", it.Kind, it.Name)
+		}
+	}
+}
+
+func TestPlan_OnlyAgents_SkillsEmptyAgentsPopulated(t *testing.T) {
+	src := makeSourceTree(t)
+	dst := t.TempDir()
+
+	res, err := Plan(Options{Source: src, Target: dst, OnlyAgents: true})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if len(res.Skills) != 0 {
+		t.Errorf("Skills = %v, want empty", res.Skills)
+	}
+	if len(res.Agents) != len(sourceAgents) {
+		t.Errorf("Agents = %v, want %d items", res.Agents, len(sourceAgents))
+	}
+}
+
+func TestPlan_OnlySkills_AgentsEmptySkillsPopulated(t *testing.T) {
+	src := makeSourceTree(t)
+	dst := t.TempDir()
+
+	res, err := Plan(Options{Source: src, Target: dst, OnlySkills: true})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if len(res.Agents) != 0 {
+		t.Errorf("Agents = %v, want empty", res.Agents)
+	}
+	if len(res.Skills) != len(sourceSkillFiles) {
+		t.Errorf("Skills = %v, want %d items", res.Skills, len(sourceSkillFiles))
+	}
+}
+
+func TestPlan_Filter_NarrowsToOneItem(t *testing.T) {
+	src := makeSourceTree(t)
+	dst := t.TempDir()
+
+	t.Run("agent", func(t *testing.T) {
+		// Agents match on the bare name: the file is "scout.md" but the
+		// filter is typed without the extension.
+		res, err := Plan(Options{Source: src, Target: dst, OnlyAgents: true, Filter: "scout"})
+		if err != nil {
+			t.Fatalf("Plan: %v", err)
+		}
+		if len(res.Skills) != 0 {
+			t.Errorf("Skills = %v, want empty", res.Skills)
+		}
+		if len(res.Agents) != 1 || res.Agents[0].Name != "scout.md" {
+			t.Errorf("Agents = %v, want exactly [scout.md]", res.Agents)
+		}
+	})
+
+	t.Run("skill", func(t *testing.T) {
+		res, err := Plan(Options{Source: src, Target: dst, OnlySkills: true, Filter: "research"})
+		if err != nil {
+			t.Fatalf("Plan: %v", err)
+		}
+		if len(res.Agents) != 0 {
+			t.Errorf("Agents = %v, want empty", res.Agents)
+		}
+		if len(res.Skills) != 1 || res.Skills[0].Name != "research" {
+			t.Errorf("Skills = %v, want exactly [research]", res.Skills)
+		}
+	})
+}
+
+func TestPlan_ErrorFilterMatchesNothing(t *testing.T) {
+	src := makeSourceTree(t)
+	dst := t.TempDir()
+
+	_, err := Plan(Options{Source: src, Target: dst, Filter: "does-not-exist"})
+	if err == nil {
+		t.Fatal("Plan = nil error, want non-nil")
+	}
+	if !strings.Contains(err.Error(), "does-not-exist") {
+		t.Errorf("error %q does not mention the filter value %q", err, "does-not-exist")
+	}
+
+	if _, err := os.Stat(filepath.Join(dst, "agents")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("target agents/ was created despite a no-match filter")
+	}
+	if _, err := os.Stat(filepath.Join(dst, "skills")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("target skills/ was created despite a no-match filter")
+	}
+}
+
+func TestApplyItem_WritesRegardlessOfStatus(t *testing.T) {
+	src := makeSourceTree(t)
+	dst := t.TempDir()
+
+	res, err := Plan(Options{Source: src, Target: dst})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	agent, ok := findItem(res.Agents, "scout.md")
+	if !ok {
+		t.Fatalf("scout.md missing from Result: %+v", res.Agents)
+	}
+	// Force StatusUnchanged even though nothing has been written to dst yet,
+	// to prove ApplyItem writes regardless of Status — unlike Apply, which
+	// would skip this item.
+	agent.Status = StatusUnchanged
+	if err := ApplyItem(agent); err != nil {
+		t.Fatalf("ApplyItem(agent): %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(dst, "agents", "scout.md"))
+	if err != nil {
+		t.Fatalf("read installed agent: %v", err)
+	}
+	if string(got) != sourceAgents["scout.md"] {
+		t.Errorf("agent content = %q, want %q", got, sourceAgents["scout.md"])
+	}
+
+	skill, ok := findItem(res.Skills, "research")
+	if !ok {
+		t.Fatalf("research skill missing from Result: %+v", res.Skills)
+	}
+	skill.Status = StatusUnchanged
+	if err := ApplyItem(skill); err != nil {
+		t.Fatalf("ApplyItem(skill): %v", err)
+	}
+	got, err = os.ReadFile(filepath.Join(dst, "skills", "research", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("read installed skill: %v", err)
+	}
+	if string(got) != sourceSkillFiles["research"] {
+		t.Errorf("skill content = %q, want %q", got, sourceSkillFiles["research"])
+	}
+}
+
 func TestResolveTarget_NonExistentTailAppendedAsPlainText(t *testing.T) {
 	base := t.TempDir()
 	target := filepath.Join(base, "does", "not", "exist", "yet")

@@ -89,6 +89,37 @@ func Plan(opts Options) (Result, error) {
 		return Result{}, fmt.Errorf("discover skills: %w", err)
 	}
 
+	// Filtering happens here, between discovery and comparison, and nowhere
+	// else. Discovery stays a pure "what does the source ship" pass with no
+	// opinion about what the caller wants; the comparison loops below only
+	// ever see items the caller actually asked for, so an item excluded by
+	// OnlyAgents/OnlySkills/Filter can never make the run fail on a
+	// comparison error it was never going to be reported for anyway.
+	if opts.OnlyAgents {
+		skills = nil
+	}
+	if opts.OnlySkills {
+		agents = nil
+	}
+	if opts.Filter != "" {
+		agents = filterItems(agents, opts.Filter)
+		skills = filterItems(skills, opts.Filter)
+		if len(agents)+len(skills) == 0 {
+			// A filter is an exact name match, so matching nothing almost
+			// always means the caller mistyped it. Returning an empty Result
+			// here would print "0 updated, 0 unchanged", which looks exactly
+			// like a successful no-op run instead of the typo it probably is
+			// — so this is fatal, not silently empty.
+			kindWord := "agents or skills"
+			if opts.OnlyAgents {
+				kindWord = "agents"
+			} else if opts.OnlySkills {
+				kindWord = "skills"
+			}
+			return Result{}, fmt.Errorf("--filter %q matched no %s", opts.Filter, kindWord)
+		}
+	}
+
 	for i := range agents {
 		same, err := fsutil.SameFile(agents[i].Src, agents[i].Dst)
 		if err != nil {
@@ -99,6 +130,11 @@ func Plan(opts Options) (Result, error) {
 		} else {
 			agents[i].Status = StatusUpdated
 		}
+		exists, err := fsutil.Exists(agents[i].Dst)
+		if err != nil {
+			return Result{}, fmt.Errorf("stat agent target %q: %w", agents[i].Name, err)
+		}
+		agents[i].Exists = exists
 	}
 	for i := range skills {
 		same, err := fsutil.SameTree(skills[i].Src, skills[i].Dst)
@@ -110,6 +146,11 @@ func Plan(opts Options) (Result, error) {
 		} else {
 			skills[i].Status = StatusUpdated
 		}
+		exists, err := fsutil.Exists(skills[i].Dst)
+		if err != nil {
+			return Result{}, fmt.Errorf("stat skill target %q: %w", skills[i].Name, err)
+		}
+		skills[i].Exists = exists
 	}
 
 	return Result{Agents: agents, Skills: skills}, nil
@@ -174,11 +215,33 @@ func contains(parent, child string) bool {
 	return strings.HasPrefix(child, parent+string(filepath.Separator))
 }
 
+// ApplyItem writes a single item to its Dst, whatever its Status says.
+// Apply loops over it, and the interactive mode calls it one item at a
+// time so it can record an outcome for each one instead of stopping at
+// the first failure.
+func ApplyItem(item Item) error {
+	switch item.Kind {
+	case KindAgent:
+		if err := fsutil.ReplaceFile(item.Src, item.Dst); err != nil {
+			return fmt.Errorf("install agent %q: %w", item.Name, err)
+		}
+	case KindSkill:
+		if err := fsutil.ReplaceTree(item.Src, item.Dst); err != nil {
+			return fmt.Errorf("install skill %q: %w", item.Name, err)
+		}
+	default:
+		return fmt.Errorf("install %q: unknown item kind %v", item.Name, item.Kind)
+	}
+	return nil
+}
+
 // Apply performs the writes that a Result describes: every item still
 // StatusUpdated is written to its Dst; every StatusUnchanged item is left
 // untouched. Skipping unchanged items is deliberate, not just an
 // optimization — rewriting identical content would churn mtimes for no
-// benefit, and it is what makes repeat runs of the tool cheap.
+// benefit, and it is what makes repeat runs of the tool cheap. The actual
+// write for each item is delegated to ApplyItem; that skip is Apply's own
+// policy, not something ApplyItem enforces.
 //
 // Apply aborts on the first error it hits rather than pressing on to the
 // remaining items: a write failure is almost always something structural
@@ -190,16 +253,16 @@ func Apply(res Result) error {
 		if item.Status == StatusUnchanged {
 			continue
 		}
-		if err := fsutil.ReplaceFile(item.Src, item.Dst); err != nil {
-			return fmt.Errorf("install agent %q: %w", item.Name, err)
+		if err := ApplyItem(item); err != nil {
+			return err
 		}
 	}
 	for _, item := range res.Skills {
 		if item.Status == StatusUnchanged {
 			continue
 		}
-		if err := fsutil.ReplaceTree(item.Src, item.Dst); err != nil {
-			return fmt.Errorf("install skill %q: %w", item.Name, err)
+		if err := ApplyItem(item); err != nil {
+			return err
 		}
 	}
 	return nil
