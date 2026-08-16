@@ -1,6 +1,6 @@
 ---
-name: create-agent
-description: Create or revise a Claude Code subagent — the agent .md file, its frontmatter, and the system prompt that keeps it inside its job. Use when the user wants a new subagent written, an existing one fixed, or an explanation of the Claude Code subagent format.
+name: create-claude-agent
+description: Create or revise a Claude Code subagent — the agent .md file, its frontmatter, and the system prompt that keeps it inside its job. Use when the user wants a new Claude Code subagent written, an existing one fixed, or an explanation of the Claude Code subagent format. Not for Cursor subagents — use create-cursor-agent for those.
 disable-model-invocation: true
 ---
 
@@ -119,3 +119,4 @@ Show the user the file you wrote and the path it went to, then stop. Do not spaw
 ## Additional resources
 
 - Full frontmatter reference, model strings, and preloaded skills: [reference.md](reference.md)
+- Building this same agent for Cursor instead? Use the `create-cursor-agent` skill — the two formats share little beyond the concept.

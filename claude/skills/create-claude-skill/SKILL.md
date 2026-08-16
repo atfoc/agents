@@ -1,6 +1,6 @@
 ---
-name: create-skill
-description: Create or revise a Claude Code skill — the SKILL.md directory, the frontmatter, and instructions that fire when they should. Use when the user wants a new skill written, an existing one fixed, or an explanation of the Claude Code skill format.
+name: create-claude-skill
+description: Create or revise a Claude Code skill — the SKILL.md directory, the frontmatter, and instructions that fire when they should. Use when the user wants a new Claude Code skill written, an existing one fixed, or an explanation of the Claude Code skill format. Not for Cursor skills — use create-cursor-skill for those.
 disable-model-invocation: true
 ---
 
@@ -102,3 +102,5 @@ Scripts are executed, not read into context, so a long script costs nothing unti
 - Nothing in the body duplicates what the sibling reference files already hold.
 
 Show the user the file you wrote and the path it went to, then stop. Do not invoke the new skill to test it unless the user asks.
+
+Building this same skill for Cursor instead? Use the `create-cursor-skill` skill — Cursor documents only five frontmatter fields, a small fraction of this format.

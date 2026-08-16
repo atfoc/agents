@@ -1,6 +1,6 @@
 ---
-name: create-skill
-description: Create or revise a Cursor skill — the SKILL.md folder, its frontmatter, and instructions that fire when they should. Use when the user wants a new skill written, an existing one fixed, or an explanation of the Cursor skill format.
+name: create-cursor-skill
+description: Create or revise a Cursor skill — the SKILL.md folder, its frontmatter, and instructions that fire when they should. Use when the user wants a new Cursor skill written, an existing one fixed, or an explanation of the Cursor skill format. Not for Claude Code skills — use create-claude-skill for those.
 disable-model-invocation: true
 ---
 
@@ -116,3 +116,5 @@ Two consequences worth planning around:
 - The body would produce the right behaviour for someone who has never seen the conversation that created it.
 
 Show the user the file you wrote and the path it went to, then stop. Do not invoke the new skill to test it unless the user asks.
+
+Building this same skill for Claude Code instead? Use the `create-claude-skill` skill — Claude Code documents many more frontmatter fields, plus arguments, forked execution, and dynamic context injection that Cursor has no equivalent for.
