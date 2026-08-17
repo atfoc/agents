@@ -15,6 +15,8 @@ Do this yourself, in the main agent. **Do not delegate the split** — not to a 
 
 **A subtask is one unit of work that can be executed on its own.** Any bigger and it splits further; any smaller and it stops making sense on its own. Aim for a job a `worker` can finish without asking anyone anything.
 
+**Size is a second test, independent of coherence.** Coherence says what belongs in one task; size says what fits in one worker. If a task's output would exceed roughly one large file, or you would expect it to take more than ~50 tool calls, split it — even when it is perfectly coherent. A worker that outgrows its task does not slow down, it dies on the output-token cap mid-file, and the task is then paid for twice: once for the attempt that failed and once for the retry.
+
 **A wave is a set of subtasks that run at the same time.** Waves are ordered: wave 1 runs to completion, then wave 2, and so on. Order inside a wave is irrelevant — by construction.
 
 Two subtasks may only share a wave if they are genuinely independent:
@@ -27,7 +29,7 @@ When in doubt, put them in different waves. A wasted wave costs a little time; a
 
 Number tasks uniquely across the whole plan (task 1..n), so a task id never repeats between waves.
 
-Do not create tasks for end-to-end or smoke testing. Testing is unit tests only: new unit tests for the code a task writes, and the existing unit tests that code affects.
+A task's testing is the unit tests for the code it writes, plus the existing unit tests that code affects. The plan decides whether anything beyond that is in scope — do not add test scope it does not call for. If the plan does call for end-to-end or integration testing, that is a task like any other: write it up per Step 2, spelling out exactly what is under test, how to run it, and what a pass looks like, and give it to a `worker`. Never run it yourself.
 
 Show the user the wave/task breakdown — one line per task, grouped by wave — before you start.
 
@@ -46,13 +48,21 @@ If two tasks need the same context, repeat it in both prompts. Repetition is che
 
 ## Step 3 — Run the waves
 
+Your job across every wave is split, brief, verify, integrate — not implement. You hold the largest context and the most expensive model in the run, so the same work costs more done by you than by a `worker`. While a wave is running, never edit a file one of its workers owns: you collide with it exactly the way two parallel workers would, and its report will describe a file you have since changed underneath it.
+
 For each wave, in order:
 
 1. Launch **one subagent of the custom type `worker` per task, all in a single message**, so the whole wave runs in parallel. Spawn that custom type by name — never a generic or built-in agent type — and never pass a model or effort override on the spawn call. The `worker` type pins its own model and effort; an override on the call outranks them and silently replaces the agent this skill is built around.
 2. Wait for every task in the wave to finish. The wave is a barrier — never start the next wave while one is still running.
 3. Read the reports. Check the workers stayed inside their files, and that what they built actually matches what the next wave assumes.
-4. If a task failed or came back short: fix it before moving on — re-run it as a new subagent of the custom type `worker` with a sharper prompt, or do the remaining piece yourself if it is small. Never carry a broken task into the next wave.
+4. If a task failed or came back short, read the report and diagnose before retrying — the fix depends on why it failed:
+   - **It hit an output or context limit.** The task did not fit in one worker. Split it and run the pieces. Never re-run the same task with a sharper prompt: it hits the same wall and you pay for both attempts.
+   - **It misunderstood the goal.** Re-run it as a new subagent of the custom type `worker`, with a prompt that closes the gap the report exposed.
+   - **It landed almost everything.** Finish the remainder yourself only if it is genuinely small; otherwise spawn a `worker` for the remainder alone.
+
+   Never carry a broken task into the next wave.
 5. If a report invalidates the split — an unforeseen dependency, a file two tasks both need — re-plan the remaining waves before continuing, and tell the user what changed.
+6. Work you discover mid-run becomes a task, not something you do by hand. A gap between two tasks, a fix a worker flagged but did not own, a follow-up its output makes necessary — write it up the way Step 2 describes, give it the next unused task number, and either run it now, if nothing in the current wave touches its files, or queue it into a later wave. Tell the user you added it. Splitting is not a one-off first step; it is how you absorb what the run teaches you.
 
 Then move to the next wave. Repeat until every wave is done.
 
