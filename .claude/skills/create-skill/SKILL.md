@@ -17,9 +17,19 @@ The only files you may read for guidance are the ones this skill names by path, 
 
 Read `${CLAUDE_PROJECT_DIR}/claude/skills/create-claude-skill/SKILL.md`, and its `reference.md` if it points you there. Follow those instructions yourself to write the new skill at `${CLAUDE_PROJECT_DIR}/claude/skills/<name>/SKILL.md` (plus any sibling files it calls for), built from the subject. Do not stop to show it to the user yet — go straight to Step 2.
 
-## Step 2 — Port it to Cursor
+## Step 2 — Port it to Cursor in a subagent
 
-Read `${CLAUDE_PROJECT_DIR}/claude/skills/create-cursor-skill/SKILL.md` and follow it yourself to write the ported skill to `${CLAUDE_PROJECT_DIR}/cursor/skills/<name>/SKILL.md`, translating the frontmatter to Cursor's five documented fields and keeping the body's trigger and behavior equivalent to the skill you just wrote in Step 1.
+Do not port it yourself. Spawn one subagent with the Agent tool, passing no `subagent_type`, and wait for it.
+
+Its prompt is the two paths and the destination, nothing else:
+
+```
+Port the skill at ${CLAUDE_PROJECT_DIR}/claude/skills/<name>/ to Cursor.
+The Cursor skill format is documented at ${CLAUDE_PROJECT_DIR}/claude/skills/create-cursor-skill/SKILL.md — read it and follow it.
+Write the ported skill to ${CLAUDE_PROJECT_DIR}/cursor/skills/<name>/.
+```
+
+Substitute `<name>` and expand `${CLAUDE_PROJECT_DIR}` to the real path before sending it. Do not paste the skill's content into the prompt, do not summarise what the skill does, and do not add porting rules of your own — the subagent reads both files itself.
 
 ## Step 3 — Report
 
