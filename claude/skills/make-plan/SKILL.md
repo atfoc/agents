@@ -65,6 +65,20 @@ Rules for cutting:
 
 Create `./.tasks/{task-name}/` and write `plan.md`. Write it for an agent who has not seen this conversation: no "as discussed", no references to earlier turns.
 
+### Annotate what is slice-scoped
+
+An implementer should be handed only the part of the plan it needs. Annotate any section whose content only some slices need with a line directly under its heading:
+
+    **Used by:** slices 2, 5
+
+Anything unannotated is shared — every implementer gets it. When the parts of a section have different answers, annotate the parts rather than the section; a child's annotation overrides its parent's. In a table, add a rightmost `Used by` column instead, so rows can differ.
+
+Every `### Slice N` heading carries `**Used by:** slice N` — its own number and nothing else, even when a later slice builds on it. This is mechanical, not a judgment call: it lets the plan be filtered with one rule.
+
+Never annotate `## Spec` or `## Key files`, or anything under them. Requirements are always shared, and Key files is the interface map — narrowing it makes an implementer open a file it could have known about.
+
+A section no slice uses is dead weight. Delete it rather than annotating it.
+
 ```markdown
 # <Task title>
 
@@ -79,9 +93,14 @@ What this plan deliberately does not do.
 How the relevant code works today, what the call path is, and what surprised you.
 Facts a fresh agent would otherwise spend an hour re-deriving.
 
+### <finding>
+**Used by:** slices 2, 5
+What you found, in full. Verbatim figures, signatures and identifiers — an implementer
+writes assertions straight from these.
+
 ## Decisions already made
-| Decision | Rationale | Rejected alternative |
-| :-- | :-- | :-- |
+| Decision | Rationale | Rejected alternative | Used by |
+| :-- | :-- | :-- | :-- |
 Settled choices. An implementer should not reopen these.
 
 ## Key files
@@ -95,6 +114,7 @@ each with its path.
 ## Slices
 
 ### Slice 1 — <name>
+**Used by:** slice 1
 **Goal:** one sentence.
 **Depends on:** nothing / Slice N.
 **Why these steps are one slice:** the shared context that binds them.
@@ -126,6 +146,9 @@ Before reporting, verify:
 - Line numbers were read from the current files, not guessed.
 - Every slice states why its steps belong together; no slice is a bag of unrelated tasks.
 - Slice order respects the stated dependencies.
+- Every section only some slices need carries a `**Used by:**` line or a `Used by` cell.
+- Every `### Slice N` heading carries `**Used by:** slice N`.
+- `## Spec` and `## Key files` carry no annotations.
 - No end-to-end tests, no manual QA steps, no automated UI tests.
 - No source file was modified.
 
