@@ -9,6 +9,10 @@ disable-model-invocation: true
 - Spec is collection of facts we want to follow and our resolting plan should honer them
 - Other important details
     - We are focusing only on unit testing, no end to end testing
+- After outputing plan we are going to go in series of questions / correctins of plan
+    - When anwsering to user try to anwser with only relevant parts
+    - This means if part of plan is beeing updated anwser with what and how is changed
+    - Do not output whole plan again
 
 - What plan has to contain
     - If plan is modifying already existing code
