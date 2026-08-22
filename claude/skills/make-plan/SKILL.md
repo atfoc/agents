@@ -1,8 +1,10 @@
 ---
 name: make-plan
-description: Turn a spec into a handoff-ready implementation plan at ./.tasks/{task-name}/plan.md, cut into vertical slices. Use whenever the user hands over a spec, feature request, ticket, or change description and wants it planned out before any code is written — "plan this", "make a plan", "write a plan for X", "how would we implement this".
+description: Make a plan for implementing given spec
 disable-model-invocation: true
 ---
+
+# 
 
 - We are making a plan
 - Input we are given is a spec

@@ -1,6 +1,6 @@
 ---
 name: implement-plan
-description: Implement a plan file that is written as a list of vertical slices — read the slices, ask how the work should be split across sequential subagents, then build them in order. Use whenever the user points at a plan file and asks to implement it, execute it, build it, or work through its slices.
+description: How to implement plan
 argument-hint: [path-to-plan]
 disable-model-invocation: true
 ---
