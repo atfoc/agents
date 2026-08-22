@@ -5,10 +5,10 @@ argument-hint: [path-to-plan]
 disable-model-invocation: true
 ---
 
-- We need to implement a plan
-- We converted spec of what needs to be built in plan
-- Plan is in format of vertical slices
-    - vertical slic is set of things to complete in order to build one working and verifiable part of grater plan
-    - each vertical slice contains informatino what needs to be done and how should it be verified
-- your job is to implement the plan one vertical slice at the time
-- each vertical slice should be executed in its own subagent
+# Implementing plan
+Your goal is to implement plan that is given to you. You are expecting plan to be in specific format. Core of the plan is a collection of vertical slices. 
+Each slice is a collection of task that when done build one functional and testable section of full work that needs to be done.
+You will go through each of this slices and execute them. Before you start with execution you will ask one question to user. 
+Should you execute each slice in subagent or should you execute all slices here inline in this conversation.
+After that you follow the users instructions for executing. If user decided to go with a subagents approach here is a prompt for each subagent.
+`Here is a plan {pathToPlanFile}. Your job is to implement slice {N}. When done give a small report (overview) what has changed back to parent agent`. 
