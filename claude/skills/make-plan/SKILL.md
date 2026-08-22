@@ -9,11 +9,16 @@ disable-model-invocation: true
 - Spec is collection of facts we want to follow and our resolting plan should honer them
 - Other important details
     - We are focusing only on unit testing, no end to end testing
+    - do not leave choice in plan
+        - we will use x or y
+        - always define are you using x or y
+    - do not run commands in root `/` they take too long and they never provide usefull infomration
+        - when searching for things focus search to directories that are relevant so search is better quality and faster
+    - no code changes, this is readonly process
 - After outputing plan we are going to go in series of questions / correctins of plan
     - When anwsering to user try to anwser with only relevant parts
     - This means if part of plan is beeing updated anwser with what and how is changed
     - Do not output whole plan again
-
 - What plan has to contain
     - If plan is modifying already existing code
         - We first showcase relevant parts of code base on highlevel
@@ -44,7 +49,12 @@ disable-model-invocation: true
             - Vertical slice also needs to have a section about verification. 
                 - What will be verified
     - Finaly any implementation details like changes to persitence, backwards compatiblity, communications etc are here to wrap everything together
-
+    - Open questions
+        - what
+            - this section is reserved for questions that you can not anwser and you need user to help you come to descsiion
+            - here conflicting facts in spec or plan are highlited for resolving
+            - undecided things left out of spec, but there is no way to infer them based on spec direction, something was complelty forgotoen
+        - First let user read the whole plan then when they instruct you, you start resolving open questions with them
 - Format for writing
     - Cut down on words
     - Keep the flow going, do not jump from topic to topic
