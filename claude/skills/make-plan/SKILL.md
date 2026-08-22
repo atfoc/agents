@@ -37,6 +37,7 @@ disable-model-invocation: true
         - It is important to build a collection of what we call vertical slices
             - A vertical slice is set of changes (add, remove, change) that start from topleven (handlers, inputs, etc) and got throug different layers of code
             - all connected to complete one operation 
+            - Vertical slice is set of things to complete in order to build one fuctional and verifailbe part of the whole plan
             - For example 
                 - Http handler accepting request
                 - Parsing payload verifying it
