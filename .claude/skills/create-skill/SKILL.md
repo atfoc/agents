@@ -27,9 +27,12 @@ Its prompt is the two paths and the destination, nothing else:
 Port the skill at ${CLAUDE_PROJECT_DIR}/claude/skills/<name>/ to Cursor.
 The Cursor skill format is documented at ${CLAUDE_PROJECT_DIR}/claude/skills/create-cursor-skill/SKILL.md — read it and follow it.
 Write the ported skill to ${CLAUDE_PROJECT_DIR}/cursor/skills/<name>/.
+Do not reword skill. Content of skill should stay as is. Only change things that are not supported in cursor version.
 ```
 
 Substitute `<name>` and expand `${CLAUDE_PROJECT_DIR}` to the real path before sending it. Do not paste the skill's content into the prompt, do not summarise what the skill does, and do not add porting rules of your own — the subagent reads both files itself.
+When porting text of skill should stay as is in claude version. Subagent should not reword it. Only replace thing in body
+if they are not supported in cursor
 
 ## Step 3 — Report
 
