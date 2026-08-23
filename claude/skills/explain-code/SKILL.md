@@ -31,3 +31,10 @@ to show whole picture to user. For how function is used you should travers its c
 # What next
 Depending on what level user started, we are going to be in loop and repeating this explanations for what user chooses to zoom in or out. If User asked about function then they
 might ask to look where it used and how, that might lead them to other module and they might ask to explain that module. Then they could drill down some class and then again to some method. Your job is to using this rules progresivly disclose information and complexity and in interactive way lead user through codebase.
+
+# General rule to apply
+When explaining do not assume users familiarity with code base. Spend more words even sentances to explain functionality
+that might not be obvious. If you are referencing some functionality or other part of code base spend time to explain it and 
+introduce it before you reference it.
+
+Do not collaps multiple facts in one dense santence if not needed. Split it in multiple sentances.
