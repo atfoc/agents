@@ -1,132 +1,75 @@
 ---
 name: make-plan
-description: Turn a spec into a handoff-ready implementation plan at ./.tasks/{task-name}/plan.md, cut into vertical slices. Use whenever the user hands over a spec, feature request, ticket, or change description and wants it planned out before any code is written — "plan this", "make a plan", "write a plan for X", "how would we implement this".
+description: Convert a spec into an implementation plan — current state, steps to take, vertical slices, open questions. Use whenever the user hands over a spec, feature request, ticket, or change description and wants it planned before any code is written — "plan this", "make a plan", "write a plan for X".
 disable-model-invocation: true
 ---
 
 # Make a plan
-
-Produce one file: `./.tasks/{task-name}/plan.md`. It holds everything another agent needs to implement the spec without repeating your investigation, organised as vertical slices.
-
-Write the plan. Do not implement it. Do not edit source files, do not run migrations, do not open PRs.
-
-## Step 0 — Find the spec
+This skill is used to conver spec to plan. Spec is a document that is describing desired state in current project. Plan is set of instructions how to get to there from current state.
 
 The spec is whatever the user pointed at: the request in this conversation, a file or ticket they named, or the skill argument. If there is no spec, ask what should be planned and stop.
 
-## Step 1 — Investigate before writing
+# What plan contains
+Plan should have the following sections:
+- Highlevel overview of current state
+- Highlevel overview of steps to take us to desired step
+- Collection of vertical slices
+- Open questions and blockers
 
-Do the investigation yourself, in this context. Do not fan the work out to subagents — the reading you do is what makes the plan specific, and it is also the context you need for Step 3. This holds whether you are the main agent or already running as a subagent.
+## Highlevel overview of current state
+The goal of this step is to make it easier to read the rest of the plan. We should analyze current project and present relevant things for the rest of the plan.
+We should highlight what components exist, what is their job, how do they interact with each other. We should only highlight components that are later going to be mentioned
+in plan for some reason. It can be because we will change them or replace them, or build a new one because old components do not satisfy some requirements.
 
-Read the actual code. The plan is worthless if it points at files that do not exist or invents function names.
+## Highlevel overview of steps to take 
+Here we want to connect to what was previously said. We want to define and explain what will we change why and how. What will we add, what will we remove, what will we chagne.
+At this as on previous level we are talking on level of modules and public apis, with maybe side of persistence or similar chagnes.
+We are not talking about implementatioo details. Goal is to build a map of all components their interaciton and how those changes will be changed, so that when we get in more low level details we
+know how they reflect to higher level picture.
 
-Find and confirm, in the real repository:
+## Vertical slices
+This section is core of a plan. Whole work needed to be done is split into what we call vertical slices. 
+Vertical slice is set of tasks that when completed build one functional and testable section of whole work that needs to be completed. 
+We define vertical slice by starting at the top level. This is a place usually some interaction happens or information in flow of information starts.
+For example if we are talking about backend this could be a http handler, that qualifies as interaction or source of information. 
+We could also talk about some public api method on some module. From there we start going deeper layer per layer, defing work that needs to be done at each level.
+Important thing is for one slice is to flow as linear as possible and make as few branchings as possible. Techniques we use for cutting of branching is mostly stubbing. For example
+we define method and call it but we do not implement it, that is left to the other slice.
+Slices should highlith what will be added, removed or changed.
+Final part of the slice will be verification. Set of facts that need to be verified in order to consider slice complete. This will usualy translate to unit tests.
 
-- The entry points the spec touches — handlers, routes, commands, components, jobs.
-- The call path from each entry point down to persistence.
-- Existing structures to reuse: types, DTOs, error helpers, validation helpers, query builders, test fixtures, factories.
-- The conventions this codebase already follows for the kind of change being planned — copy them, do not invent new ones.
-- Anything in the spec that the current code makes impossible or expensive.
+### Example of vertical slice
+We have a add to cart handler. This handler recieves reqeust from client. Here we would show example of request and/or schema. Then handler verifies request and build domain object.
+UserShopigCartService service method addToCart is invoked given domain request. This handler then fetches users cart from database with lock using repository method getUserCartLock.
+Item id is verified is it already in cart. If it is in cart request is failed. If it is not in cart it is added to cart. After adding to the cart user cart is persisted to database.
+All of this is wraped in transaction, and on commit hook we are going to be tracking following analytics events. We are not going to be implementing events here that will be done in seprate slice, we are
+just going to leave empty methods here for tracking. 
 
-Record file paths with line numbers as you go. Every claim in the plan must trace back to something you read.
+Note that in this example we did not talk about changes to databse schema or tracking events. Both of this could belong to this slice, but we are trying to keep slices focues. If we introduced both we 
+are making branching of slice and in that increasing scope. So that is why descision here was to leave implementatio of tracking in seperate slice possibliy grouping bunch of or all events thogether.
+And for database there could be much more work like mappers from json columns or adding more then one column, that is all left as seprate slice. If we here were just adding one or two methods in repository in order
+to server this handler then we would add those task to this slice. And still if we had that we would add it to this slice, just changes to schema or migration effort would be left as second slice.
 
-## Step 2 — Name the task
+## Open questions and blockers
+This is section where we write all things we could not define in the plan. It can be contradicting facts in the spec itself. It could be contradicting facts in spec and real code.
+For questions we do not have information on and we can not decide we leave to user to make a choice. 
+For blockers anythign that is not creating plan but could help enrich plan with details and clear uncertanties we wirte here. Example is if spec require us to invoke kubctl binary. We might not know exact 
+arguments and what they return. So open question / blocker could be exploration of that so that we can better define those details in plan.
 
-Infer `{task-name}` from the spec: lowercase, hyphens, 2–4 words, describing the change and not the ticket number — `add-bulk-export-endpoint`, `split-billing-service`, `fix-stale-session-cache`.
+# What after we output plan
+When we output a plan we let user read it and understand it. Users then ask us follow ups or to explain plan in more details. Maybe we correct some parts of the plan, or anwser and close open questions.
+We wait until user says to do something different, until then we are in loop of ansering questions about the plan and updating the plan.
+When updating the plan our anwser is not whole plan updated, but we anwser with diffs to the plan. What has the required update changed in the plan.
 
-If `./.tasks/{task-name}/plan.md` already exists, read it and update it in place rather than starting over. Say so in the final report.
+# Output format
+For the output format we focus on taking user from high level of abstraction to lower level of abstraction, we do this for each section. We try to keep lenght of our anwser short and direct.
+We alwasy provide users with overview of topics before we dive into details of each section of the topic. And we always use appropreat output for the job. For example we use ascii diagrams for ui
+or flows or architectural discussions. But never really only on diragrams they are always followed with text explanations.
 
-## Step 3 — Cut the work into vertical slices
-
-A vertical slice is an ordered set of changes where **each step benefits heavily from the context the previous step just built**. Working through a slice top to bottom should feel like one continuous piece of work, not context-switching.
-
-**One slice:** add the handler → change the service method signature the handler now needs → implement the logic in that method → unit-test it. Each step is decided by the one before it.
-
-**A separate slice:** a second handler with a similar shape. It does not build on the first handler's service methods, so it starts from cold context.
-
-**Also a separate slice:** the database work — migrations and repository/query changes — even when the same handler triggered it. It carries substantial work of its own and only loosely depends on the handler's context. Splitting it keeps one slice from exploding.
-
-Rules for cutting:
-
-- Order slices so a slice's dependencies land in an earlier slice. State the dependency explicitly (`depends on Slice 2`).
-- If a slice's steps stop feeding each other, cut at the weak link.
-- If a slice is large enough that a fresh agent would lose the thread, split it — bounded slices beat "complete" slices.
-- Repetitive mechanical work that shares no reasoning (rename across 30 call sites, regenerate clients) is its own slice.
-- Each slice should end in a state where the codebase builds and its unit tests pass.
-
-## Step 4 — Plan the tests
-
-- Unit tests only. Write them into the slice that produces the code they cover.
-- Do not plan end-to-end tests, integration suites that need live services, browser automation, or manual QA steps.
-- Do not plan automated tests for UI — this codebase does not test UI automatically. Say "no automated test — UI" on those steps.
-- For each unit test, name what it asserts, not just "add tests".
-
-## Step 5 — Write the file
-
-Create `./.tasks/{task-name}/` and write `plan.md`. Write it for an agent who has not seen this conversation: no "as discussed", no references to earlier turns.
-
-```markdown
-# <Task title>
-
-## Spec
-What was asked, restated completely enough to implement from. Include the user's own
-constraints verbatim where wording matters.
-
-## Out of scope
-What this plan deliberately does not do.
-
-## Investigation notes
-How the relevant code works today, what the call path is, and what surprised you.
-Facts a fresh agent would otherwise spend an hour re-deriving.
-
-## Decisions already made
-| Decision | Rationale | Rejected alternative |
-| :-- | :-- | :-- |
-Settled choices. An implementer should not reopen these.
-
-## Key files
-| Path:line | What is there | Why it matters |
-| :-- | :-- | :-- |
-
-## Reuse
-Existing types, helpers, patterns, and test fixtures to use instead of writing new ones,
-each with its path.
-
-## Slices
-
-### Slice 1 — <name>
-**Goal:** one sentence.
-**Depends on:** nothing / Slice N.
-**Why these steps are one slice:** the shared context that binds them.
-
-**Steps**
-1. `path/to/file.ext:120` — what to change, and what it must look like afterwards.
-2. `path/to/other.ext` (new) — what it contains.
-3. ...
-
-**Tests**
-- `path/to/file_test.ext` — asserts <behaviour>.
-
-**Done when:** the checkable end state.
-
-### Slice 2 — <name>
-...
-
-## Open questions
-Anything genuinely unresolved, with the recommended default so implementation is not blocked.
-```
-
-Drop a section only when it is truly empty. An empty `Open questions` is a good sign; an empty `Key files` means Step 1 was skipped.
-
-## Step 6 — Check and report
-
-Before reporting, verify:
-
-- Every path in the plan exists, or is explicitly marked `(new)`.
-- Line numbers were read from the current files, not guessed.
-- Every slice states why its steps belong together; no slice is a bag of unrelated tasks.
-- Slice order respects the stated dependencies.
-- No end-to-end tests, no manual QA steps, no automated UI tests.
-- No source file was modified.
-
-Report the path to the plan and a one-line summary of each slice, then stop.
+# Other key details
+- We do not write or plan integration tests, or end to end tests.
+- We always write unit tests for changes.
+- We never leave in plan `We will do x or y`. We always choose x or y and define it in plan.
+- We do not run commands in root `/`. They are slow and almost always provide little to no value. Always foucs commands on specific directories. Mostly you will find everythign you need in cwd.
+- We are not making any code changes, this whole process is readonly.
+- We do the investigation ourselves. We do not fan the work out to subagents. This holds whether we are the main agent or already running as a subagent.
