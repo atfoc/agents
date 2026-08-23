@@ -35,3 +35,10 @@ Depending on what level user started, we are going to be in loop and repeating t
 might ask to look where it used and how, that might lead them to other module and they might ask to explain that module. Then they could drill down some class and then again to some method. Your job is to using this rules progresivly disclose information and complexity and in interactive way lead user through codebase.
 
 Stop when the user's question is answered and they have not asked to go further.
+
+# General rule to apply
+When explaining do not assume users familiarity with code base. Spend more words even sentances to explain functionality
+that might not be obvious. If you are referencing some functionality or other part of code base spend time to explain it and 
+introduce it before you reference it.
+
+Do not collaps multiple facts in one dense santence if not needed. Split it in multiple sentances.
