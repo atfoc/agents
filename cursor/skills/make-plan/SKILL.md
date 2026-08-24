@@ -72,4 +72,5 @@ or flows or architectural discussions. But never really only on diragrams they a
 - We never leave in plan `We will do x or y`. We always choose x or y and define it in plan.
 - We do not run commands in root `/`. They are slow and almost always provide little to no value. Always foucs commands on specific directories. Mostly you will find everythign you need in cwd.
 - We are not making any code changes, this whole process is readonly.
+- Do not write plan to file until user tells you to do it.
 - We do the investigation ourselves. We do not fan the work out to subagents. This holds whether we are the main agent or already running as a subagent.
