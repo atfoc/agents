@@ -21,9 +21,11 @@ In order to create implementation spec you will follow this process. First we ne
 in the loop providing feedback and instructions. More info on that.
 
 ## Feature definition 
-This is not on implementation level but in a high level description what needs to be built. Not from technical perspective but from product / user perspective. 
-Sometimes that will be from technical perspective as well. Usually for refactors, reusable components etc. This do not have feature definition maybe going back to buisnis 
-or users but they will have a clear definition what needs to be built without going to implementation details explained above. An example could look like this
+This is not on implementation level but in a high level description what needs to be built. Your goal is to come to shared understanding what is beeing built not
+how. So you should not focus on implementation level questions like what to do with this class etc, but on questinos that help you understand scope, reason, direction and goal.
+Even when feature definition is more implementaiton in nature like refactoring a class.
+An example could look like this
+When dealing with technical feature definitinos like refactors you should still not ask me implementation questions.
 
 The social element of liking and disliking user post is beeing added to our platform. Like and dislike buttons with a progress
 bar representing ratio of likes and dislikes is added bellow user post title. Clicking on like button will flash a animation ...
