@@ -17,3 +17,9 @@ Do not update the implementatino spec in place. Write in same dir as implementat
 a sentace or two for each slice you defined. When I say it is ok then you continue to implementation. Before you start executing implementation you will ask me  follwing question.
 Shoudl we implement each slice inline in this conversation one after other or shoudl we execute each slice in subagent.
 
+
+If user choose implementing one slice per agent then prompt for agent needs to be the following.
+```
+Here is a implementation spec file {pathToSpecFile} your job is to implement slice {n}. Do not do the work of ther slices. If you encounter some conflicts do not resolve them. Report them to parent
+agent and let him resolve them. When you finish return report of what is done to parent agent.
+```
