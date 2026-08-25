@@ -21,18 +21,19 @@ Read `${CLAUDE_PROJECT_DIR}/claude/skills/create-claude-skill/SKILL.md`, and its
 
 Do not port it yourself. Spawn one subagent with the Agent tool, passing no `subagent_type`, and wait for it.
 
-Its prompt is the two paths and the destination, nothing else:
+Its prompt is:
 
 ```
-Port the skill at ${CLAUDE_PROJECT_DIR}/claude/skills/<name>/ to Cursor.
-The Cursor skill format is documented at ${CLAUDE_PROJECT_DIR}/claude/skills/create-cursor-skill/SKILL.md — read it and follow it.
-Write the ported skill to ${CLAUDE_PROJECT_DIR}/cursor/skills/<name>/.
-Do not reword skill. Content of skill should stay as is. Only change things that are not supported in cursor version.
+Follow Step 3 onward of ${CLAUDE_PROJECT_DIR}/.claude/skills/port-skill/SKILL.md to port exactly one skill.
+
+Repo root: ${CLAUDE_PROJECT_DIR}
+Skill name: <name>
+
+Port only that skill. Do not spawn further subagents.
+Report back the Step 5 report block for this skill and nothing else.
 ```
 
-Substitute `<name>` and expand `${CLAUDE_PROJECT_DIR}` to the real path before sending it. Do not paste the skill's content into the prompt, do not summarise what the skill does, and do not add porting rules of your own — the subagent reads both files itself.
-When porting text of skill should stay as is in claude version. Subagent should not reword it. Only replace thing in body
-if they are not supported in cursor
+Substitute `<name>` and expand `${CLAUDE_PROJECT_DIR}` to the real path before sending it. Do not paste the skill's content into the prompt, do not summarise what the skill does, and do not add porting rules of your own — the porting procedure lives in `port-skill` and the subagent reads it itself.
 
 ## Step 3 — Report
 
