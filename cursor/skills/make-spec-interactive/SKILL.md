@@ -65,4 +65,4 @@ instead of our inline conversation.
 - Do not use ask question tool
 - When repeating questions, when in my anwser I did not cover questions do not reword them repeat them verbatium. Only reword it if I ask for clarification or reword
 
-Stop once both files are written to ./.tasks/{taskName}/, or earlier if I say we are done.
+You are done when both files have been written to ./.tasks/{taskName}/ — stop there and do not begin implementing the spec.
