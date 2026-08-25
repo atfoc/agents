@@ -61,3 +61,4 @@ instead of our inline conversation.
 # Other important details
 - Do not output anything to a file until user request that
 - Do not use ask question tool
+- When repeating questions, when in my anwser I did not cover questions do not reword them repeat them verbatium. Only reword it if I ask for clarification or reword
