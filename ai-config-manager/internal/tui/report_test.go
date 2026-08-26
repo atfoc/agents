@@ -10,9 +10,9 @@ import (
 
 // TestRenderReport checks the exact rendered output of RenderReport,
 // byte-for-byte, across the shapes the interactive session can produce:
-// a normal run with a mix of installed/updated/failed items, a run where
-// one section has nothing in it, a run where nothing was applied at all,
-// and a run whose failures need their error text visible. Each case
+// a normal run with a mix of installed/updated/removed/failed items, a run
+// where one section has nothing in it, a run where nothing was applied at
+// all, and a run whose failures need their error text visible. Each case
 // compares the full output against a literal, not just a substring, so a
 // change to spacing, the six-dash rule, or the blank lines would show up
 // here immediately.
@@ -23,31 +23,35 @@ func TestRenderReport(t *testing.T) {
 		want string
 	}{
 		{
-			name: "both sections populated with installed, updated, and failed items",
+			name: "both sections populated with removed, installed, updated, and failed items",
 			out: Outcome{
 				Confirmed: true,
 				Applied: []ItemOutcome{
-					{Item: installer.Item{Kind: installer.KindAgent, Name: "scout.md", Exists: false}},
-					{Item: installer.Item{Kind: installer.KindAgent, Name: "thinker.md", Exists: true}},
-					{Item: installer.Item{Kind: installer.KindAgent, Name: "worker.md"}, Err: errors.New("permission denied")},
-					{Item: installer.Item{Kind: installer.KindSkill, Name: "research", Exists: false}},
-					{Item: installer.Item{Kind: installer.KindSkill, Name: "make-plan", Exists: true}},
-					{Item: installer.Item{Kind: installer.KindSkill, Name: "implement-plan"}, Err: errors.New("disk full")},
+					{Action: actionRemove, Kind: installer.KindAgent, Name: "stale.md"},
+					{Action: actionInstall, Kind: installer.KindAgent, Name: "scout.md", Exists: false},
+					{Action: actionInstall, Kind: installer.KindAgent, Name: "thinker.md", Exists: true},
+					{Action: actionInstall, Kind: installer.KindAgent, Name: "worker.md", Err: errors.New("permission denied")},
+					{Action: actionRemove, Kind: installer.KindSkill, Name: "old-thing"},
+					{Action: actionInstall, Kind: installer.KindSkill, Name: "research", Exists: false},
+					{Action: actionInstall, Kind: installer.KindSkill, Name: "make-plan", Exists: true},
+					{Action: actionInstall, Kind: installer.KindSkill, Name: "implement-plan", Err: errors.New("disk full")},
 				},
 			},
 			want: `AGENTS
 ------
 failed     worker.md: permission denied
+removed    stale.md
 installed  scout.md
 updated    thinker.md
 
 SKILLS
 ------
 failed     implement-plan: disk full
+removed    old-thing
 installed  research
 updated    make-plan
 
-2 installed, 2 updated, 2 failed
+2 installed, 2 updated, 2 removed, 2 failed
 `,
 		},
 		{
@@ -55,7 +59,7 @@ updated    make-plan
 			out: Outcome{
 				Confirmed: true,
 				Applied: []ItemOutcome{
-					{Item: installer.Item{Kind: installer.KindAgent, Name: "scout.md", Exists: false}},
+					{Action: actionInstall, Kind: installer.KindAgent, Name: "scout.md", Exists: false},
 				},
 			},
 			want: `AGENTS
@@ -66,11 +70,11 @@ SKILLS
 ------
 (none)
 
-1 installed, 0 updated, 0 failed
+1 installed, 0 updated, 0 removed, 0 failed
 `,
 		},
 		{
-			// A zero-value Outcome is what a quit-without-installing session
+			// A zero-value Outcome is what a quit-without-applying session
 			// produces before the caller even decides whether to call
 			// RenderReport at all; it must still render cleanly.
 			name: "empty outcome prints (none) for both sections",
@@ -83,7 +87,7 @@ SKILLS
 ------
 (none)
 
-0 installed, 0 updated, 0 failed
+0 installed, 0 updated, 0 removed, 0 failed
 `,
 		},
 		{
@@ -94,8 +98,11 @@ SKILLS
 				Confirmed: true,
 				Applied: []ItemOutcome{
 					{
-						Item: installer.Item{Kind: installer.KindAgent, Name: "scout.md", Exists: true},
-						Err:  errors.New("permission denied: /tmp/x"),
+						Action: actionInstall,
+						Kind:   installer.KindAgent,
+						Name:   "scout.md",
+						Exists: true,
+						Err:    errors.New("permission denied: /tmp/x"),
 					},
 				},
 			},
@@ -107,29 +114,34 @@ SKILLS
 ------
 (none)
 
-0 installed, 0 updated, 1 failed
+0 installed, 0 updated, 0 removed, 1 failed
 `,
 		},
 		{
 			// Fed in scrambled order with two items in each outcome group,
-			// the output must still come out failed-then-installed-then-
-			// updated, alphabetical by name within each group.
-			name: "sorts failed before installed before updated, alphabetically within each",
+			// the output must still come out failed-then-removed-then-
+			// installed-then-updated, alphabetical by name within each
+			// group.
+			name: "sorts failed before removed before installed before updated, alphabetically within each",
 			out: Outcome{
 				Confirmed: true,
 				Applied: []ItemOutcome{
-					{Item: installer.Item{Kind: installer.KindAgent, Name: "yankee", Exists: true}},
-					{Item: installer.Item{Kind: installer.KindAgent, Name: "zeta", Exists: false}},
-					{Item: installer.Item{Kind: installer.KindAgent, Name: "charlie"}, Err: errors.New("err-c")},
-					{Item: installer.Item{Kind: installer.KindAgent, Name: "bravo", Exists: true}},
-					{Item: installer.Item{Kind: installer.KindAgent, Name: "whiskey"}, Err: errors.New("err-w")},
-					{Item: installer.Item{Kind: installer.KindAgent, Name: "alpha", Exists: false}},
+					{Action: actionInstall, Kind: installer.KindAgent, Name: "yankee", Exists: true},
+					{Action: actionRemove, Kind: installer.KindAgent, Name: "sierra"},
+					{Action: actionInstall, Kind: installer.KindAgent, Name: "zeta", Exists: false},
+					{Action: actionInstall, Kind: installer.KindAgent, Name: "charlie", Err: errors.New("err-c")},
+					{Action: actionInstall, Kind: installer.KindAgent, Name: "bravo", Exists: true},
+					{Action: actionRemove, Kind: installer.KindAgent, Name: "delta"},
+					{Action: actionRemove, Kind: installer.KindAgent, Name: "whiskey", Err: errors.New("err-w")},
+					{Action: actionInstall, Kind: installer.KindAgent, Name: "alpha", Exists: false},
 				},
 			},
 			want: `AGENTS
 ------
 failed     charlie: err-c
 failed     whiskey: err-w
+removed    delta
+removed    sierra
 installed  alpha
 installed  zeta
 updated    bravo
@@ -139,7 +151,7 @@ SKILLS
 ------
 (none)
 
-2 installed, 2 updated, 2 failed
+2 installed, 2 updated, 2 removed, 2 failed
 `,
 		},
 	}
@@ -157,6 +169,78 @@ SKILLS
 	}
 }
 
+// TestRenderReport_FailedRemovalShowsReason pins the one case the removal
+// half adds to the failure line: a deletion that could not happen must name
+// why, not just that it failed.
+func TestRenderReport_FailedRemovalShowsReason(t *testing.T) {
+	out := Outcome{
+		Confirmed: true,
+		Applied: []ItemOutcome{
+			{
+				Action: actionRemove,
+				Kind:   installer.KindAgent,
+				Name:   "broken.md",
+				Err:    errors.New(`remove agent "broken.md": permission denied`),
+			},
+		},
+	}
+	want := `AGENTS
+------
+failed     broken.md: remove agent "broken.md": permission denied
+
+SKILLS
+------
+(none)
+
+0 installed, 0 updated, 0 removed, 1 failed
+`
+
+	var buf bytes.Buffer
+	if err := RenderReport(&buf, out); err != nil {
+		t.Fatalf("RenderReport: %v", err)
+	}
+	if got := buf.String(); got != want {
+		t.Errorf("RenderReport output mismatch.\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// TestRenderReport_AllFourStatusesExactOutput is the worked example from the
+// feature's own description: one removal, one install, one update, and one
+// failed removal, in one section.
+func TestRenderReport_AllFourStatusesExactOutput(t *testing.T) {
+	out := Outcome{
+		Confirmed: true,
+		Applied: []ItemOutcome{
+			{Action: actionRemove, Kind: installer.KindAgent, Name: "broken.md",
+				Err: errors.New(`remove agent "broken.md": permission denied`)},
+			{Action: actionRemove, Kind: installer.KindAgent, Name: "stale.md"},
+			{Action: actionInstall, Kind: installer.KindAgent, Name: "scout.md", Exists: false},
+			{Action: actionInstall, Kind: installer.KindAgent, Name: "plan.md", Exists: true},
+		},
+	}
+	want := `AGENTS
+------
+failed     broken.md: remove agent "broken.md": permission denied
+removed    stale.md
+installed  scout.md
+updated    plan.md
+
+SKILLS
+------
+(none)
+
+1 installed, 1 updated, 1 removed, 1 failed
+`
+
+	var buf bytes.Buffer
+	if err := RenderReport(&buf, out); err != nil {
+		t.Fatalf("RenderReport: %v", err)
+	}
+	if got := buf.String(); got != want {
+		t.Errorf("RenderReport output mismatch.\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}
+
 // TestRenderReport_DoesNotMutateInput ensures RenderReport copies before
 // sorting rather than reordering out.Applied in place, the same
 // precaution installer.Render takes with its own slices: a caller may
@@ -165,9 +249,10 @@ func TestRenderReport_DoesNotMutateInput(t *testing.T) {
 	out := Outcome{
 		Confirmed: true,
 		Applied: []ItemOutcome{
-			{Item: installer.Item{Kind: installer.KindAgent, Name: "worker.md", Exists: true}},
-			{Item: installer.Item{Kind: installer.KindAgent, Name: "thinker.md"}, Err: errors.New("boom")},
-			{Item: installer.Item{Kind: installer.KindAgent, Name: "scout.md", Exists: false}},
+			{Action: actionInstall, Kind: installer.KindAgent, Name: "worker.md", Exists: true},
+			{Action: actionRemove, Kind: installer.KindAgent, Name: "stale.md"},
+			{Action: actionInstall, Kind: installer.KindAgent, Name: "thinker.md", Err: errors.New("boom")},
+			{Action: actionInstall, Kind: installer.KindAgent, Name: "scout.md", Exists: false},
 		},
 	}
 	wantOrder := itemNames(out.Applied)
@@ -185,7 +270,7 @@ func TestRenderReport_DoesNotMutateInput(t *testing.T) {
 func itemNames(applied []ItemOutcome) []string {
 	names := make([]string, len(applied))
 	for i, oc := range applied {
-		names[i] = oc.Item.Name
+		names[i] = oc.Name
 	}
 	return names
 }

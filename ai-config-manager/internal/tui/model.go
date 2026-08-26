@@ -16,46 +16,103 @@ type state int
 const (
 	stateBrowse state = iota
 	stateConfirm
-	stateInstalling
+	stateConflict
+	stateApplying
 	stateDone
 )
 
-// selKey identifies a selected item across tabs. Keying selection by kind
-// and name — rather than by position — is what makes a selection survive
-// switching tabs and searching: the row may move or vanish from view, the
-// key does not.
+// tabCount is the number of tabs: Agents, Skills, Uninstall Agents,
+// Uninstall Skills.
+const tabCount = 4
+
+// action says what marking a row in a tab means.
+type action int
+
+const (
+	actionInstall action = iota
+	actionRemove
+)
+
+// tabDef is the static description of one tab. Keeping the four in a table,
+// rather than in branches on the tab index, is what lets tab-agnostic code
+// ask "what does this tab list?" instead of enumerating cases.
+type tabDef struct {
+	label  string
+	kind   installer.Kind
+	action action
+}
+
+var tabs = [tabCount]tabDef{
+	{label: "Agents", kind: installer.KindAgent, action: actionInstall},
+	{label: "Skills", kind: installer.KindSkill, action: actionInstall},
+	{label: "Uninstall Agents", kind: installer.KindAgent, action: actionRemove},
+	{label: "Uninstall Skills", kind: installer.KindSkill, action: actionRemove},
+}
+
+// entry is one row's worth of list data, flattened from either an
+// installer.Item or an installer.TargetItem. The two are different types
+// with different groupings, but every mechanic below this point — the
+// cursor, scrolling, the search filter, the checkbox — needs only a name, a
+// heading to sit under, and whether it can be chosen. Flattening here is
+// what keeps that machinery written once instead of twice.
+type entry struct {
+	kind installer.Kind
+	name string
+	// group is the heading text this entry sits under ("to update",
+	// "only in target", …) and groupRank is that heading's display order
+	// within the tab.
+	group     string
+	groupRank int
+	// selectable is false only for an install tab's up-to-date items:
+	// installing a byte-identical item is a no-op, so offering a checkbox
+	// would imply an effect that does not exist. Every item on an uninstall
+	// tab is selectable — it is there, so it can go.
+	selectable bool
+}
+
+// selKey identifies a marked item across tabs. Keying a mark by kind and
+// name — rather than by position — is what makes it survive switching tabs
+// and searching: the row may move or vanish from view, the key does not.
 type selKey struct {
 	Kind installer.Kind
 	Name string
 }
 
 // row is one line of the scrolled list. A heading row carries only
-// Heading (Index is -1); an item row carries only Item and its position in
-// that tab's visibleItems. Keeping headings as rows, rather than drawing
+// heading (index is -1); an item row carries only entry and its position in
+// that tab's visibleEntries. Keeping headings as rows, rather than drawing
 // them separately from the scrolled content, is what lets the same offset
 // arithmetic scroll headings and items together.
 type row struct {
 	heading string
-	item    installer.Item
+	entry   entry
 	index   int
 }
 
 // Model is the interactive picker's state.
 type Model struct {
-	res     installer.Result
+	res     installer.Result       // source side
+	tgt     installer.TargetResult // target side
 	install InstallFunc
+	remove  RemoveFunc
 
 	state state
-	tab   int // 0 = Agents, 1 = Skills
+	tab   int // index into tabs
 
-	cursor [2]int    // per-tab cursor, remembered across tab switches
-	offset [2]int    // per-tab scroll offset, in rows
-	query  [2]string // per-tab committed search text
+	cursor [tabCount]int    // per-tab cursor, remembered across tab switches
+	offset [tabCount]int    // per-tab scroll offset, in rows
+	query  [tabCount]string // per-tab committed search text
 
 	search     textinput.Model
 	searchOpen bool // the input is focused and taking keystrokes
 
-	selected  map[selKey]bool
+	// Two maps, not one keyed by {action, kind, name}. A conflict is
+	// precisely "the same selKey is in both", so detection is a set
+	// intersection; one map would make it a scan, and would turn each tab's
+	// count into a filtered walk.
+	selected map[selKey]bool // marked for install, on tabs 0 and 1
+	marked   map[selKey]bool // marked for removal, on tabs 2 and 3
+
 	outcomes  []ItemOutcome
 	confirmed bool
 
@@ -63,19 +120,23 @@ type Model struct {
 	height int
 }
 
-// New builds the interactive model for res. install is called once per
-// selected item when the user confirms; production callers pass
-// installer.ApplyItem, tests pass a stand-in that never touches disk.
-func New(res installer.Result, install InstallFunc) Model {
+// New builds the interactive model. install and remove are called once per
+// marked item when the user confirms; production callers pass
+// installer.ApplyItem and installer.RemoveItem, tests pass stand-ins that
+// never touch disk.
+func New(res installer.Result, tgt installer.TargetResult, install InstallFunc, remove RemoveFunc) Model {
 	search := textinput.New()
 	search.Placeholder = "search"
 
 	return Model{
 		res:      res,
+		tgt:      tgt,
 		install:  install,
+		remove:   remove,
 		state:    stateBrowse,
 		search:   search,
 		selected: make(map[selKey]bool),
+		marked:   make(map[selKey]bool),
 		// 80x24 is the traditional terminal default. Setting it here, not
 		// leaving it zero, is what makes the model render something sane
 		// on the one frame that can be drawn before tea.WindowSizeMsg
@@ -97,72 +158,109 @@ func (m Model) Init() tea.Cmd {
 	return nil
 }
 
-// visibleItems returns the items of the given tab, narrowed by that tab's
-// query, ordered by display group.
-func (m Model) visibleItems(tab int) []installer.Item {
-	src := m.res.Agents
-	if tab == 1 {
-		src = m.res.Skills
+// tabEntries returns the tab's full underlying list as entries, unfiltered
+// and unsorted. It is the only place in the package that branches on item
+// type.
+func (m Model) tabEntries(tab int) []entry {
+	d := tabs[tab]
+	var out []entry
+	switch d.action {
+	case actionInstall:
+		src := m.res.Agents
+		if d.kind == installer.KindSkill {
+			src = m.res.Skills
+		}
+		for _, it := range src {
+			g := it.Group()
+			out = append(out, entry{
+				kind:       it.Kind,
+				name:       it.Name,
+				group:      g.String(),
+				groupRank:  int(g),
+				selectable: g != installer.GroupUpToDate,
+			})
+		}
+	case actionRemove:
+		src := m.tgt.Agents
+		if d.kind == installer.KindSkill {
+			src = m.tgt.Skills
+		}
+		for _, it := range src {
+			g := it.Group()
+			out = append(out, entry{
+				kind:       it.Kind,
+				name:       it.Name,
+				group:      g.String(),
+				groupRank:  int(g),
+				selectable: true,
+			})
+		}
 	}
+	return out
+}
 
-	// This is a browse aid, not the command line's --filter: --filter is
+// visibleEntries returns the entries of the given tab, narrowed by that
+// tab's query, ordered by display group.
+func (m Model) visibleEntries(tab int) []entry {
+	src := m.tabEntries(tab)
+
+	// This is a browse aid, not the command line's --install: --install is
 	// an exact name match, whereas this is a loose, case-insensitive
 	// substring match so the user can narrow the list while typing without
 	// knowing an item's exact name up front. The two are deliberately not
 	// the same kind of thing, so don't confuse them.
 	q := strings.ToLower(m.query[tab])
-	items := make([]installer.Item, 0, len(src))
-	for _, it := range src {
-		if q == "" || strings.Contains(strings.ToLower(it.Name), q) {
-			items = append(items, it)
+	entries := make([]entry, 0, len(src))
+	for _, e := range src {
+		if q == "" || strings.Contains(strings.ToLower(e.name), q) {
+			entries = append(entries, e)
 		}
 	}
 
-	// Sorting on this copy — never on m.res's own slices — by Group() and
-	// then Name is what makes selectableCount a plain prefix count:
+	// Sorting on this copy — never on the underlying slices — by groupRank
+	// and then name is what makes selectableCount a plain prefix count:
 	// GroupToUpdate (0) and GroupToInstall (1) always sort ahead of
 	// GroupUpToDate (2), so every selectable item ends up in a contiguous
-	// prefix and every up-to-date item ends up at the tail.
-	sort.Slice(items, func(i, j int) bool {
-		gi, gj := items[i].Group(), items[j].Group()
-		if gi != gj {
-			return gi < gj
+	// prefix and every up-to-date item ends up at the tail. On an uninstall
+	// tab nothing is unselectable, so that prefix is the whole list.
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].groupRank != entries[j].groupRank {
+			return entries[i].groupRank < entries[j].groupRank
 		}
-		return items[i].Name < items[j].Name
+		return entries[i].name < entries[j].name
 	})
-	return items
+	return entries
 }
 
-// selectableCount returns how many of the tab's visible items can be
+// selectableCount returns how many of the tab's visible entries can be
 // chosen. Up-to-date items are shown but never selectable: installing a
 // byte-identical item is a no-op, so offering a checkbox would imply an
 // effect that does not exist.
 func (m Model) selectableCount(tab int) int {
 	n := 0
-	for _, it := range m.visibleItems(tab) {
-		if it.Group() != installer.GroupUpToDate {
+	for _, e := range m.visibleEntries(tab) {
+		if e.selectable {
 			n++
 		}
 	}
 	return n
 }
 
-// rows walks visibleItems(tab) in order, emitting a heading row each time
-// the group changes, then a row per item.
+// rows walks visibleEntries(tab) in order, emitting a heading row each time
+// the group changes, then a row per entry.
 func (m Model) rows(tab int) []row {
-	items := m.visibleItems(tab)
-	rows := make([]row, 0, len(items)+3)
+	entries := m.visibleEntries(tab)
+	rows := make([]row, 0, len(entries)+3)
 
-	var cur installer.Group
+	cur := ""
 	seenGroup := false
-	for i, it := range items {
-		g := it.Group()
-		if !seenGroup || g != cur {
-			rows = append(rows, row{heading: g.String(), index: -1})
-			cur = g
+	for i, e := range entries {
+		if !seenGroup || e.group != cur {
+			rows = append(rows, row{heading: e.group, index: -1})
+			cur = e.group
 			seenGroup = true
 		}
-		rows = append(rows, row{item: it, index: i})
+		rows = append(rows, row{entry: e, index: i})
 	}
 	return rows
 }
@@ -175,33 +273,37 @@ func (m Model) rows(tab int) []row {
 const browseChrome = 5
 
 // confirmChrome is how many lines viewConfirm spends on anything that is
-// not a selected name: the box's two border lines, the blank line under the
+// not a marked name: the box's two border lines, the blank line under the
 // names, the count line, the blank line under that, and the key hints.
 const confirmChrome = 6
 
+// conflictChrome is how many lines viewConflict spends on anything that is
+// not a conflicting name: the box's two border lines, the header line, the
+// blank line under the names, and the key hint.
+const conflictChrome = 5
+
 // tabRowCount is how many rows a tab's list has with nothing filtered out:
-// one per item, plus one heading per group present, or the single
+// one per entry, plus one heading per group present, or the single
 // "no agents found" line for an empty tab. It deliberately counts the tab's
-// whole underlying list rather than visibleItems, because it feeds
+// whole underlying list rather than visibleEntries, because it feeds
 // frameHeight, which must not move when the user types a search.
 func (m Model) tabRowCount(tab int) int {
-	src := m.res.Agents
-	if tab == 1 {
-		src = m.res.Skills
-	}
-	if len(src) == 0 {
+	entries := m.tabEntries(tab)
+	if len(entries) == 0 {
 		return 1
 	}
 
-	var seen [3]bool
+	// A map rather than a fixed-size array: install tabs have three groups
+	// and uninstall tabs two.
+	seen := make(map[int]bool, 3)
 	groups := 0
-	for _, it := range src {
-		if g := it.Group(); int(g) < len(seen) && !seen[g] {
-			seen[g] = true
+	for _, e := range entries {
+		if !seen[e.groupRank] {
+			seen[e.groupRank] = true
 			groups++
 		}
 	}
-	return len(src) + groups
+	return len(entries) + groups
 }
 
 // frameHeight is how many lines every frame occupies — the same number in
@@ -219,21 +321,34 @@ func (m Model) tabRowCount(tab int) int {
 // shrinking is not. Pinning every frame to one height means no frame ever
 // shrinks.
 //
-// The height is the tallest frame any state could want — the taller tab's
-// list, or the confirm box with everything selected — so that padding is
+// The height is the tallest frame any state could want — the tallest tab's
+// list, or the confirm box with everything marked — so that padding is
 // the exception rather than the rule, and it never depends on what the user
-// has selected or searched for, which would make it move again. It is
+// has marked or searched for, which would make it move again. It is
 // capped one line short of the terminal: a frame that fills the terminal
 // exactly leaves no room for whatever the shell printed above it, so every
 // repaint scrolls the screen by a line.
 func (m Model) frameHeight() int {
-	natural := browseChrome + max(m.tabRowCount(0), m.tabRowCount(1))
+	// Four tabs now, not two.
+	rows := 0
+	for tab := 0; tab < tabCount; tab++ {
+		rows = max(rows, m.tabRowCount(tab))
+	}
+	natural := browseChrome + rows
 
-	// Worst case for the confirm box: every item selected, so neither kind
-	// falls back to its "(none)" line. The max(…, 1) covers a kind with no
-	// items at all, which does draw one.
-	confirm := confirmChrome + 2 + max(len(m.res.Agents), 1) + max(len(m.res.Skills), 1)
+	// Worst case for the confirm box: everything marked on both sides, so
+	// neither section is omitted. The +2 is the two section headers.
+	confirm := confirmChrome + 2 +
+		len(m.res.Agents) + len(m.res.Skills) +
+		len(m.tgt.Agents) + len(m.tgt.Skills)
 	natural = max(natural, confirm)
+
+	// Worst case for the conflict box: every item appearing on both sides is
+	// conflicted, which cannot exceed the smaller side.
+	conflict := conflictChrome + min(
+		len(m.res.Agents)+len(m.res.Skills),
+		len(m.tgt.Agents)+len(m.tgt.Skills))
+	natural = max(natural, conflict)
 
 	if maxH := m.height - 1; natural > maxH {
 		natural = maxH
@@ -309,7 +424,7 @@ func (m *Model) syncScroll() {
 
 // clampCursor keeps the cursor inside [0, selectableCount(tab)), or at 0
 // when that count is 0. Needed after anything that can shrink or empty the
-// tab's selectable items out from under the cursor, namely typing a
+// tab's selectable entries out from under the cursor, namely typing a
 // narrower search query.
 func (m *Model) clampCursor() {
 	n := m.selectableCount(m.tab)
@@ -323,7 +438,7 @@ func (m *Model) clampCursor() {
 	}
 }
 
-// cursorDown moves the cursor one selectable item down, without wrapping.
+// cursorDown moves the cursor one selectable entry down, without wrapping.
 func (m *Model) cursorDown() {
 	if n := m.selectableCount(m.tab); n > 0 && m.cursor[m.tab] < n-1 {
 		m.cursor[m.tab]++
@@ -331,7 +446,7 @@ func (m *Model) cursorDown() {
 	m.syncScroll()
 }
 
-// cursorUp moves the cursor one selectable item up, without wrapping.
+// cursorUp moves the cursor one selectable entry up, without wrapping.
 func (m *Model) cursorUp() {
 	if m.cursor[m.tab] > 0 {
 		m.cursor[m.tab]--
@@ -339,95 +454,146 @@ func (m *Model) cursorUp() {
 	m.syncScroll()
 }
 
-// toggleSelected flips the selection state of the item under the cursor.
-// It is a no-op when the tab has no selectable items — clampCursor keeps
-// the cursor at 0 in that case, but that 0 may still point at an
-// up-to-date item (e.g. a tab whose only item is up to date), which must
-// never become selectable just because the cursor sits on it.
-func (m *Model) toggleSelected() {
-	if m.selectableCount(m.tab) == 0 {
-		return
+// marks returns the map the given action writes into. Maps are reference
+// types, so the caller mutates the model's own map through it.
+func (m Model) marks(a action) map[selKey]bool {
+	if a == actionRemove {
+		return m.marked
 	}
-	items := m.visibleItems(m.tab)
-	idx := m.cursor[m.tab]
-	if idx < 0 || idx >= len(items) {
-		return
-	}
-	it := items[idx]
-	key := selKey{Kind: it.Kind, Name: it.Name}
-	if m.selected[key] {
-		delete(m.selected, key)
-	} else {
-		m.selected[key] = true
-	}
+	return m.selected
 }
 
-// selectedNames returns the sorted names of selected items of kind, for
-// deterministic display in the confirm step.
-func (m Model) selectedNames(kind installer.Kind) []string {
-	var names []string
-	for k := range m.selected {
-		if k.Kind == kind {
-			names = append(names, k.Name)
-		}
-	}
-	sort.Strings(names)
-	return names
-}
-
-// selectedCount returns how many items of kind are currently selected,
-// across both tabs — used by the tab bar so a selection made on the other
-// tab stays visible as a count.
-func (m Model) selectedCount(kind installer.Kind) int {
+// markCount returns how many of tab's kind are marked in tab's own map,
+// used by the tab bar so a mark made on a tab the user isn't looking at
+// stays visible as a count.
+func (m Model) markCount(tab int) int {
+	d := tabs[tab]
 	n := 0
-	for k := range m.selected {
-		if k.Kind == kind {
+	for k := range m.marks(d.action) {
+		if k.Kind == d.kind {
 			n++
 		}
 	}
 	return n
 }
 
-// installedMsg carries the result of installing every selected item. It is
-// what installCmd's command sends back once all of them are done.
-type installedMsg struct {
+// inConflict reports whether key is marked for install and for removal at
+// the same time. A conflict is same kind + same name: an agent named
+// "research" and a skill named "research" are unrelated items that merely
+// share a string, and never conflict. Both maps key on selKey and both
+// sides use the same naming convention ("scout.md", "research"), which is
+// why installer.TargetItem.Name keeps the ".md" suffix.
+func (m Model) inConflict(key selKey) bool {
+	return m.selected[key] && m.marked[key]
+}
+
+// conflicts returns every conflicted key, sorted by Kind then Name so the
+// list reads the same way twice.
+func (m Model) conflicts() []selKey {
+	var out []selKey
+	for k := range m.selected {
+		if m.marked[k] {
+			out = append(out, k)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
+}
+
+// toggleMark flips the mark on the entry under the cursor, in whichever map
+// the current tab writes to. It is a no-op when the tab has no selectable
+// entries — clampCursor keeps the cursor at 0 in that case, but that 0 may
+// still point at an up-to-date item, which must never become selectable
+// just because the cursor sits on it.
+//
+// It deliberately does not refuse to create a conflict: refusing here would
+// mean a keypress silently doing nothing. The conflict instead becomes
+// visible the instant it is made — see renderRow — and blocks only at
+// enter.
+func (m *Model) toggleMark() {
+	if m.selectableCount(m.tab) == 0 {
+		return
+	}
+	entries := m.visibleEntries(m.tab)
+	idx := m.cursor[m.tab]
+	if idx < 0 || idx >= len(entries) {
+		return
+	}
+	e := entries[idx]
+	key := selKey{Kind: e.kind, Name: e.name}
+	set := m.marks(tabs[m.tab].action)
+	if set[key] {
+		delete(set, key)
+	} else {
+		set[key] = true
+	}
+}
+
+// appliedMsg carries the result of applying every marked change. It is what
+// applyCmd's command sends back once all of them are done.
+type appliedMsg struct {
 	outcomes []ItemOutcome
 }
 
-// installCmd returns a command that installs every selected item and
-// records an outcome for each of them. It runs as a tea.Cmd — off the
-// Update call stack, on Bubble Tea's own goroutine — so a slow or blocking
-// InstallFunc cannot freeze the UI.
-func (m Model) installCmd() tea.Cmd {
+// applyCmd returns a command that performs every marked change: removals
+// first, then installs. Conflicts are impossible by this point, so the order
+// cannot change the outcome — but "clean out, then put in" is the order the
+// confirmation box reads in, and matching it is what keeps the report
+// legible against what the user just approved.
+//
+// It runs as a tea.Cmd — off the Update call stack, on Bubble Tea's own
+// goroutine — so a slow InstallFunc or RemoveFunc cannot freeze the UI. And
+// unlike installer.Apply/Remove, a failure here does not stop the loop: the
+// interactive report has to account for every item the user marked, not
+// just the ones before the first failure.
+func (m Model) applyCmd() tea.Cmd {
 	selected := make(map[selKey]bool, len(m.selected))
 	for k := range m.selected {
 		selected[k] = true
 	}
-	agents := m.res.Agents
-	skills := m.res.Skills
-	install := m.install
+	marked := make(map[selKey]bool, len(m.marked))
+	for k := range m.marked {
+		marked[k] = true
+	}
+	res, tgt := m.res, m.tgt
+	install, remove := m.install, m.remove
 
 	return func() tea.Msg {
 		var outcomes []ItemOutcome
-		// Agents then skills, each in the Result's own order — not
-		// visibleItems' order, which a search query or the display
-		// grouping can reshuffle. And unlike installer.Apply, a failure
-		// here does not stop the loop: the interactive report has to
-		// account for every item the user chose, not just the ones before
-		// the first failure.
-		for _, it := range agents {
-			if !selected[selKey{Kind: it.Kind, Name: it.Name}] {
-				continue
+
+		// Removals: target agents then target skills, each in
+		// TargetResult's own order — not visibleEntries' order, which a
+		// search query or the display grouping can reshuffle.
+		for _, group := range [][]installer.TargetItem{tgt.Agents, tgt.Skills} {
+			for _, it := range group {
+				if !marked[selKey{Kind: it.Kind, Name: it.Name}] {
+					continue
+				}
+				outcomes = append(outcomes, ItemOutcome{
+					Action: actionRemove, Kind: it.Kind, Name: it.Name, Err: remove(it),
+				})
 			}
-			outcomes = append(outcomes, ItemOutcome{Item: it, Err: install(it)})
 		}
-		for _, it := range skills {
-			if !selected[selKey{Kind: it.Kind, Name: it.Name}] {
-				continue
+
+		// Installs: agents then skills, each in Result's own order.
+		for _, group := range [][]installer.Item{res.Agents, res.Skills} {
+			for _, it := range group {
+				if !selected[selKey{Kind: it.Kind, Name: it.Name}] {
+					continue
+				}
+				outcomes = append(outcomes, ItemOutcome{
+					Action: actionInstall, Kind: it.Kind, Name: it.Name,
+					Exists: it.Exists, Err: install(it),
+				})
 			}
-			outcomes = append(outcomes, ItemOutcome{Item: it, Err: install(it)})
 		}
-		return installedMsg{outcomes: outcomes}
+
+		return appliedMsg{outcomes: outcomes}
 	}
 }
 
@@ -440,7 +606,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.syncScroll()
 		return m, nil
 
-	case installedMsg:
+	case appliedMsg:
 		m.outcomes = msg.outcomes
 		m.state = stateDone
 		return m, tea.Quit
@@ -453,8 +619,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKey dispatches a key press. ctrl+c is handled here, ahead of
 // everything else, because it must quit from any state unconditionally —
-// including mid-search and mid-install — without disturbing confirmed:
-// confirmed is already true if an install has started, and stays false
+// including mid-search and mid-apply — without disturbing confirmed:
+// confirmed is already true if an apply has started, and stays false
 // otherwise.
 func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
@@ -471,10 +637,12 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.handleBrowseKey(key)
 	case stateConfirm:
 		return m.handleConfirmKey(key)
+	case stateConflict:
+		return m.handleConflictKey(key)
 	default:
-		// stateInstalling and stateDone: every key but ctrl+c (handled
+		// stateApplying and stateDone: every key but ctrl+c (handled
 		// above) is ignored — there is nothing left for the user to do
-		// but wait for the install to finish.
+		// but wait for the apply to finish.
 		return m, nil
 	}
 }
@@ -499,8 +667,8 @@ func (m Model) handleSearchKey(msg tea.KeyPressMsg, key string) (tea.Model, tea.
 		return m, nil
 
 	case "enter":
-		// Deliberately does not start an install: a stray enter while
-		// typing a search must never install anything.
+		// Deliberately does not start an apply: a stray enter while
+		// typing a search must never install or remove anything.
 		m.query[m.tab] = m.search.Value()
 		m.search.Blur()
 		m.searchOpen = false
@@ -536,22 +704,30 @@ func (m Model) handleBrowseKey(key string) (tea.Model, tea.Cmd) {
 	case "k", "up":
 		m.cursorUp()
 
-	case "h", "left", "l", "right":
-		// With exactly two tabs, moving to the "previous" one and the
-		// "next" one are the same operation: toggle. Both directions wrap
-		// for the same reason — there's nowhere else to go.
-		m.tab = 1 - m.tab
+	case "h", "left":
+		// Four tabs, so h and l are genuinely different directions now,
+		// rather than the same toggle. Both still wrap.
+		m.tab = (m.tab + tabCount - 1) % tabCount
+		m.clampCursor()
+		m.syncScroll()
+
+	case "l", "right":
+		m.tab = (m.tab + 1) % tabCount
 		m.clampCursor()
 		m.syncScroll()
 
 	case " ", "space":
-		m.toggleSelected()
+		m.toggleMark()
 
 	case "enter":
-		if len(m.selected) > 0 {
+		if len(m.conflicts()) > 0 {
+			m.state = stateConflict
+			return m, nil
+		}
+		if len(m.selected)+len(m.marked) > 0 {
 			m.state = stateConfirm
 		}
-		// Nothing selected: stay in stateBrowse. The help line's own text
+		// Nothing marked: stay in stateBrowse. The help line's own text
 		// changes to say so; see viewBrowse.
 
 	case "/":
@@ -567,13 +743,26 @@ func (m Model) handleBrowseKey(key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleConflictKey is reached in stateConflict. It accepts only esc.
+// There is no key that proceeds: the rule is hard-blocking with no
+// override, so the screen offers no override to press. There is no
+// defensible ordering — installing then deleting wastes the write, deleting
+// then installing makes the delete meaningless — so the only correct
+// response is to unmark one of the two.
+func (m Model) handleConflictKey(key string) (tea.Model, tea.Cmd) {
+	if key == "esc" {
+		m.state = stateBrowse
+	}
+	return m, nil
+}
+
 // handleConfirmKey is reached in stateConfirm.
 func (m Model) handleConfirmKey(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "enter":
-		m.state = stateInstalling
+		m.state = stateApplying
 		m.confirmed = true
-		return m, m.installCmd()
+		return m, m.applyCmd()
 
 	case "esc":
 		m.state = stateBrowse

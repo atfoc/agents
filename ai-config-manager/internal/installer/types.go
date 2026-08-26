@@ -81,6 +81,31 @@ type Item struct {
 	Status Status
 }
 
+// TargetItem is a single agent or skill found in the target directory,
+// considered for removal. It has no Src: removal is target-driven, and what
+// the source ships has no bearing on what can be removed.
+type TargetItem struct {
+	Kind Kind
+	// Name is the item's name as it appears under its Kind's directory:
+	// "scout.md" for an agent, "research" for a skill. This is the same
+	// convention as Item.Name, deliberately: it is what lets the bare-name
+	// rules for --uninstall be the same code as the ones for --install, and
+	// what lets the interactive mode detect an install/remove conflict as a
+	// plain equality on {Kind, Name}.
+	Name string
+	// Path is the absolute path to the target file (agent) or directory
+	// (skill) to be removed. It is called Path rather than Dst because Dst
+	// only means something opposite a Src, and there is none here.
+	Path string
+	// InSource records whether the source also ships an item of this Kind
+	// and Name. It drives display grouping only; it never affects whether
+	// the item can be removed. It is stored rather than derived because it
+	// is computed once, during planning, where both lists are in hand;
+	// deriving it later would mean handing the source list to display code
+	// that otherwise has no business with it.
+	InSource bool
+}
+
 // Group is how the interactive mode buckets an item for display. It is
 // derived from Status and Exists on demand and never stored: it is a
 // presentation concern, not part of the plan.
@@ -120,11 +145,56 @@ func (i Item) Group() Group {
 	}
 }
 
+// UninstallGroup is how the interactive mode buckets a target item for
+// display. Like Group, it is derived on demand and never stored.
+type UninstallGroup int
+
+const (
+	GroupAlsoInSource UninstallGroup = iota
+	GroupOnlyInTarget
+)
+
+// String returns the heading an UninstallGroup is shown under.
+func (g UninstallGroup) String() string {
+	switch g {
+	case GroupAlsoInSource:
+		return "also in source"
+	case GroupOnlyInTarget:
+		return "only in target"
+	default:
+		return fmt.Sprintf("UninstallGroup(%d)", g)
+	}
+}
+
+// Group buckets the target item for display. GroupAlsoInSource is the zero
+// value so that it sorts first, which is the order the feature calls for:
+// the group where a conflict with an install selection is possible comes
+// before the group that is the point of the feature.
+func (t TargetItem) Group() UninstallGroup {
+	if t.InSource {
+		return GroupAlsoInSource
+	}
+	return GroupOnlyInTarget
+}
+
 // Result is the outcome of a planning pass: every agent and every skill
 // considered, each with its computed Status.
 type Result struct {
 	Agents []Item
 	Skills []Item
+}
+
+// TargetResult is the outcome of a target-scanning pass: every agent and
+// every skill currently present in the target.
+type TargetResult struct {
+	Agents []TargetItem
+	Skills []TargetItem
+}
+
+// nameKey identifies an item across the source and target lists.
+type nameKey struct {
+	Kind Kind
+	Name string
 }
 
 // Options configures a planning/apply run.
@@ -136,9 +206,15 @@ type Options struct {
 	// mutually exclusive; the command line rejects both at once.
 	OnlyAgents bool
 	OnlySkills bool
-	// Filter, when set, narrows the run to the single item with this exact
-	// name. It is only meaningful together with OnlyAgents or OnlySkills.
-	Filter string
+	// Install, when non-empty, narrows the run to exactly these item names.
+	// Empty means "everything the source ships". It is only meaningful
+	// together with OnlyAgents or OnlySkills.
+	Install []string
+	// Uninstall names the items to remove from the target. A non-empty
+	// Uninstall makes this an uninstall run: it is mutually exclusive with
+	// Install, and with Source being set at all. Like Install, it is only
+	// meaningful together with OnlyAgents or OnlySkills.
+	Uninstall []string
 	// Interactive selects the terminal UI instead of a straight-through run.
 	Interactive bool
 }

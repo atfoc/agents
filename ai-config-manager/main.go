@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/atfoc/agents/ai-config-manager/internal/installer"
 	"github.com/atfoc/agents/ai-config-manager/internal/tui"
@@ -20,6 +21,37 @@ import (
 // exit 0, a usage error goes to stderr with exit 1.
 var errHelp = errors.New("help requested")
 
+// nameList collects a repeatable string flag (--install, --uninstall) into
+// a slice. stdlib flag has no repeatable-string flag: a plain StringVar
+// would let the last occurrence silently overwrite the earlier ones, which
+// for --uninstall would mean quietly removing one item when the user asked
+// for three.
+type nameList []string
+
+func (n *nameList) String() string {
+	return strings.Join(*n, ", ")
+}
+
+// Set appends v, rejecting an empty name and skipping one already present.
+// A repeated name is not an error: these flags are declarative ("these are
+// the items I want"), and listing one twice describes the same wish.
+// Deduplicating here rather than at use keeps the report from printing the
+// same item twice. An empty name, by contrast, cannot match anything, and
+// catching it here names the actual problem instead of letting a later
+// "no such agents: \"\"" do it badly.
+func (n *nameList) Set(v string) error {
+	if v == "" {
+		return errors.New("name cannot be empty")
+	}
+	for _, existing := range *n {
+		if existing == v {
+			return nil
+		}
+	}
+	*n = append(*n, v)
+	return nil
+}
+
 // usage is hand-written rather than produced by fs.PrintDefaults(). The
 // short and long forms of each flag (-s/--source, -t/--target) are
 // registered with the flag package as separate entries bound to the same
@@ -29,32 +61,40 @@ var errHelp = errors.New("help requested")
 // them the way they're actually meant to be used.
 func usage(w io.Writer) {
 	fmt.Fprint(w, `Usage: ai-config-manager -s DIR -t DIR [--dry-run]
+       ai-config-manager -t DIR (--agents | --skills) --uninstall NAME [--dry-run]
        ai-config-manager -i -s DIR -t DIR
        ai-config-manager -h | --help
 
 Installs agent and skill definitions from a source directory into a target
-directory:
+directory, and removes ones already installed there:
 
   <source>/agents/<name>.md   ->  <target>/agents/<name>.md
   <source>/skills/<name>/     ->  <target>/skills/<name>/
 
 Every item the source ships is replaced in the target, with no prompting and
-no backup. Anything else already present in the target's agents/ and skills/
-is never read, written, or removed.
+no backup. The tool reads and lists everything in the target's agents/ and
+skills/, and removes only what you explicitly name or mark; nothing else in
+the target is ever read, written, or removed.
 
 Options:
   -s, --source DIR   Directory holding the agents/ and skills/ to install
-                     from. Required.
-  -t, --target DIR   Directory to install agents/ and skills/ into. Created
-                     if it does not exist. Required.
+                     from. Required, except with --uninstall.
+  -t, --target DIR   Directory to install agents/ and skills/ into, and to
+                     remove them from. Created if it does not exist.
+                     Required.
       --dry-run      Print what would happen but write nothing.
-  -i                 Choose what to install in an interactive terminal
-                     UI. Only -s and -t may be combined with it.
-      --agents       Install only agents.
-      --skills       Install only skills.
-      --filter NAME  Install only the item with this exact name. Must
-                     be used with --agents or --skills. NAME is the
+  -i                 Choose what to install and remove in an interactive
+                     terminal UI. Only -s and -t may be combined with it.
+      --agents       Restrict the run to agents.
+      --skills       Restrict the run to skills.
+      --install NAME Install only the item with this exact name. Repeatable.
+                     Must be used with --agents or --skills. NAME is the
                      bare name: "scout", not "scout.md".
+      --uninstall NAME
+                     Remove the item with this exact name from the target.
+                     Repeatable. Must be used with --agents or --skills, and
+                     cannot be combined with -s or --install. Every name must
+                     already exist in the target, or nothing is removed.
   -h, --help         Show this help and exit.
 
 Exit codes:
@@ -65,7 +105,8 @@ Examples:
   ai-config-manager -s ./claude -t ~/.claude
   ai-config-manager --source ./cursor --target ~/.cursor --dry-run
   ai-config-manager -i -s ./claude -t ~/.claude
-  ai-config-manager -s ./claude -t ~/.claude --agents --filter scout
+  ai-config-manager -s ./claude -t ~/.claude --agents --install scout
+  ai-config-manager -t ~/.claude --skills --uninstall research --uninstall stale
 `)
 }
 
@@ -90,7 +131,9 @@ func parseArgs(args []string) (installer.Options, error) {
 	fs.BoolVar(&opts.DryRun, "dry-run", false, "print what would happen but write nothing")
 	fs.BoolVar(&opts.OnlyAgents, "agents", false, "install only agents")
 	fs.BoolVar(&opts.OnlySkills, "skills", false, "install only skills")
-	fs.StringVar(&opts.Filter, "filter", "", "install only the item with this exact name")
+	var install, uninstall nameList
+	fs.Var(&install, "install", "install only the items with these exact names")
+	fs.Var(&uninstall, "uninstall", "remove the items with these exact names from the target")
 	fs.BoolVar(&opts.Interactive, "i", false, "choose what to install in an interactive terminal UI")
 
 	if err := fs.Parse(args); err != nil {
@@ -100,37 +143,29 @@ func parseArgs(args []string) (installer.Options, error) {
 		return installer.Options{}, fmt.Errorf("%w", err)
 	}
 
-	// Checked before requiredness: flag stops parsing at the first non-flag
-	// argument, so e.g. "-s a b -t c" leaves "-t c" sitting unparsed in
-	// fs.Args() behind the stray "b". Checking requiredness first would
-	// misreport that as a missing --target instead of the actual problem,
-	// the stray "b".
+	// Unchanged, and still first: flag stops parsing at the first non-flag
+	// argument, so e.g. "-s a b -t c" leaves "-t c" unparsed behind the stray
+	// "b". Checking requiredness first would misreport that as a missing
+	// --target instead of the actual problem, the stray "b".
 	if fs.NArg() > 0 {
 		return installer.Options{}, fmt.Errorf("unexpected argument: %q", fs.Arg(0))
 	}
-	if opts.Source == "" {
-		return installer.Options{}, errors.New("--source is required")
-	}
-	if opts.Target == "" {
-		return installer.Options{}, errors.New("--target is required")
+
+	opts.Install = install
+	opts.Uninstall = uninstall
+	installing := len(opts.Install) > 0
+	uninstalling := len(opts.Uninstall) > 0
+
+	// Mode conflicts come before requiredness: a run asking for two jobs at
+	// once has no single set of required flags to check it against. The
+	// symmetry between the two flags is in the vocabulary, not in the run.
+	if installing && uninstalling {
+		return installer.Options{}, errors.New("--install and --uninstall cannot be combined")
 	}
 
-	// --agents and --skills each restrict the run to a single kind; taken
-	// together they'd restrict to both kinds at once, which is the same as
-	// neither, and would also leave --filter's target kind ambiguous.
-	if opts.OnlyAgents && opts.OnlySkills {
-		return installer.Options{}, errors.New("--agents and --skills are mutually exclusive")
-	}
-	// --filter narrows within a kind; without --agents or --skills there is
-	// no kind to narrow within. Skipped when -i is set: in that case --filter
-	// is invalid regardless of --agents/--skills, and the check below names
-	// -i as the actual conflict instead of this more generic one.
-	if opts.Filter != "" && !opts.OnlyAgents && !opts.OnlySkills && !opts.Interactive {
-		return installer.Options{}, errors.New("--filter requires --agents or --skills")
-	}
 	// -i hands every choice to the interactive picker; combining it with any
-	// flag that pre-decides part of that choice would make it unclear which
-	// one wins, so -i accepts only -s and -t. Checked in a fixed order so the
+	// flag that pre-decides part of that choice would make it unclear which one
+	// wins, so -i accepts only -s and -t. Checked in a fixed order so the
 	// reported conflict is deterministic regardless of which flags are set.
 	if opts.Interactive {
 		switch {
@@ -140,9 +175,43 @@ func parseArgs(args []string) (installer.Options, error) {
 			return installer.Options{}, errors.New("-i cannot be combined with --agents")
 		case opts.OnlySkills:
 			return installer.Options{}, errors.New("-i cannot be combined with --skills")
-		case opts.Filter != "":
-			return installer.Options{}, errors.New("-i cannot be combined with --filter")
+		case installing:
+			return installer.Options{}, errors.New("-i cannot be combined with --install")
+		case uninstalling:
+			return installer.Options{}, errors.New("-i cannot be combined with --uninstall")
 		}
+	}
+
+	// Removing something from the target needs nothing from the source, so a
+	// source given alongside --uninstall is not merely redundant — it means the
+	// caller believes the source has a say in what gets deleted, which is
+	// exactly the misunderstanding this rule exists to catch.
+	if uninstalling && opts.Source != "" {
+		return installer.Options{}, errors.New("--uninstall cannot be combined with --source")
+	}
+
+	if !uninstalling && opts.Source == "" {
+		return installer.Options{}, errors.New("--source is required")
+	}
+	if opts.Target == "" {
+		return installer.Options{}, errors.New("--target is required")
+	}
+
+	// --agents and --skills each restrict the run to a single kind; taken
+	// together they'd restrict to both at once, which is the same as neither,
+	// and would leave --install/--uninstall's target kind ambiguous.
+	if opts.OnlyAgents && opts.OnlySkills {
+		return installer.Options{}, errors.New("--agents and --skills are mutually exclusive")
+	}
+
+	// A bare name is ambiguous between an agent and a skill. For --install that
+	// would install the wrong thing; for --uninstall it would delete the wrong
+	// thing, and an irreversible operation must not guess.
+	if installing && !opts.OnlyAgents && !opts.OnlySkills {
+		return installer.Options{}, errors.New("--install requires --agents or --skills")
+	}
+	if uninstalling && !opts.OnlyAgents && !opts.OnlySkills {
+		return installer.Options{}, errors.New("--uninstall requires --agents or --skills")
 	}
 
 	return opts, nil
@@ -169,6 +238,19 @@ func run(stdout, stderr io.Writer, args []string) int {
 		return runInteractive(stdout, stderr, opts)
 	}
 
+	if len(opts.Uninstall) > 0 {
+		res, err := installer.RunUninstall(opts)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		if err := installer.RenderRemoved(stdout, res, opts.DryRun); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+
 	res, err := installer.Run(opts)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
@@ -184,8 +266,8 @@ func run(stdout, stderr io.Writer, args []string) int {
 }
 
 // runInteractive drives the -i picker. It deliberately plans and hands the
-// plan to the UI rather than calling installer.Run: nothing may be written
-// before the user has had a chance to choose what to install.
+// plans to the UI rather than calling installer.Run: nothing may be written
+// or deleted before the user has had a chance to choose.
 func runInteractive(stdout, stderr io.Writer, opts installer.Options) int {
 	// The picker reads keystrokes directly from the terminal, so a pipe or
 	// redirect on stdin can't drive it. Failing clearly here beats hanging
@@ -197,20 +279,20 @@ func runInteractive(stdout, stderr io.Writer, opts installer.Options) int {
 		return 1
 	}
 
-	res, err := installer.Plan(opts)
+	res, tgt, err := installer.PlanInteractive(opts)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
 	}
 
-	out, err := tui.Run(res)
+	out, err := tui.Run(res, tgt)
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
 	}
 
 	if !out.Confirmed {
-		// The user quit without installing anything: that's not an error.
+		// The user quit without applying anything: that's not an error.
 		return 0
 	}
 

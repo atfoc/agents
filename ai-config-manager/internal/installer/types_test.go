@@ -45,3 +45,43 @@ func TestGroupString(t *testing.T) {
 		})
 	}
 }
+
+func TestTargetItemGroup(t *testing.T) {
+	tests := []struct {
+		name     string
+		inSource bool
+		want     UninstallGroup
+	}{
+		{"also shipped by the source", true, GroupAlsoInSource},
+		{"present only in the target", false, GroupOnlyInTarget},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			item := TargetItem{InSource: tt.inSource}
+			if got := item.Group(); got != tt.want {
+				t.Errorf("Group() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUninstallGroupString(t *testing.T) {
+	tests := []struct {
+		name string
+		g    UninstallGroup
+		want string
+	}{
+		{"also in source", GroupAlsoInSource, "also in source"},
+		{"only in target", GroupOnlyInTarget, "only in target"},
+		{"out of range", UninstallGroup(99), "UninstallGroup(99)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.g.String(); got != tt.want {
+				t.Errorf("String() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

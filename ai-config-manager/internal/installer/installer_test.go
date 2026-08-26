@@ -757,14 +757,14 @@ func TestPlan_OnlySkills_AgentsEmptySkillsPopulated(t *testing.T) {
 	}
 }
 
-func TestPlan_Filter_NarrowsToOneItem(t *testing.T) {
+func TestPlan_Install_NarrowsToOneItem(t *testing.T) {
 	src := makeSourceTree(t)
 	dst := t.TempDir()
 
 	t.Run("agent", func(t *testing.T) {
 		// Agents match on the bare name: the file is "scout.md" but the
-		// filter is typed without the extension.
-		res, err := Plan(Options{Source: src, Target: dst, OnlyAgents: true, Filter: "scout"})
+		// name is typed without the extension.
+		res, err := Plan(Options{Source: src, Target: dst, OnlyAgents: true, Install: []string{"scout"}})
 		if err != nil {
 			t.Fatalf("Plan: %v", err)
 		}
@@ -777,7 +777,7 @@ func TestPlan_Filter_NarrowsToOneItem(t *testing.T) {
 	})
 
 	t.Run("skill", func(t *testing.T) {
-		res, err := Plan(Options{Source: src, Target: dst, OnlySkills: true, Filter: "research"})
+		res, err := Plan(Options{Source: src, Target: dst, OnlySkills: true, Install: []string{"research"}})
 		if err != nil {
 			t.Fatalf("Plan: %v", err)
 		}
@@ -790,23 +790,23 @@ func TestPlan_Filter_NarrowsToOneItem(t *testing.T) {
 	})
 }
 
-func TestPlan_ErrorFilterMatchesNothing(t *testing.T) {
+func TestPlan_ErrorInstallMatchesNothing(t *testing.T) {
 	src := makeSourceTree(t)
 	dst := t.TempDir()
 
-	_, err := Plan(Options{Source: src, Target: dst, Filter: "does-not-exist"})
+	_, err := Plan(Options{Source: src, Target: dst, Install: []string{"does-not-exist"}})
 	if err == nil {
 		t.Fatal("Plan = nil error, want non-nil")
 	}
 	if !strings.Contains(err.Error(), "does-not-exist") {
-		t.Errorf("error %q does not mention the filter value %q", err, "does-not-exist")
+		t.Errorf("error %q does not mention the missing name %q", err, "does-not-exist")
 	}
 
 	if _, err := os.Stat(filepath.Join(dst, "agents")); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("target agents/ was created despite a no-match filter")
+		t.Errorf("target agents/ was created despite a no-match --install")
 	}
 	if _, err := os.Stat(filepath.Join(dst, "skills")); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("target skills/ was created despite a no-match filter")
+		t.Errorf("target skills/ was created despite a no-match --install")
 	}
 }
 
@@ -870,5 +870,611 @@ func TestResolveTarget_NonExistentTailAppendedAsPlainText(t *testing.T) {
 	want := filepath.Join(wantBase, "does", "not", "exist", "yet")
 	if got != want {
 		t.Errorf("resolveTarget(%q) = %q, want %q", target, got, want)
+	}
+}
+
+// targetAgents and targetSkillFiles are the fixed contents makeTargetTree
+// writes, keyed by name. As with sourceAgents/sourceSkillFiles, tests read
+// them rather than hardcoding strings so "what the target holds" and "what a
+// test expects to find" cannot drift apart.
+var targetAgents = map[string]string{
+	"scout.md":  "installed scout",
+	"stale.md":  "installed stale",
+	"worker.md": "installed worker",
+}
+
+var targetSkillFiles = map[string]string{
+	"research":  "installed research skill",
+	"stale":     "installed stale skill",
+	"make-plan": "installed make-plan skill",
+}
+
+// makeTargetTree builds a realistic target directory: three agents and three
+// skills, each skill a directory containing a single SKILL.md.
+func makeTargetTree(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	for name, content := range targetAgents {
+		mustWriteFile(t, filepath.Join(root, "agents", name), content)
+	}
+	for name, content := range targetSkillFiles {
+		mustWriteFile(t, filepath.Join(root, "skills", name, "SKILL.md"), content)
+	}
+	return root
+}
+
+// findTargetItem returns the target item named name from items, if present.
+func findTargetItem(items []TargetItem, name string) (TargetItem, bool) {
+	for _, it := range items {
+		if it.Name == name {
+			return it, true
+		}
+	}
+	return TargetItem{}, false
+}
+
+// TestPlanTarget_NoSourceRequired is load-bearing: it proves the sourceless
+// path exists at all. Every other PlanTarget test would still pass if
+// PlanTarget quietly demanded a Source the way Plan does.
+func TestPlanTarget_NoSourceRequired(t *testing.T) {
+	dst := makeTargetTree(t)
+
+	res, err := PlanTarget(Options{Target: dst})
+	if err != nil {
+		t.Fatalf("PlanTarget with an empty Source: %v", err)
+	}
+	if len(res.Agents) != len(targetAgents) || len(res.Skills) != len(targetSkillFiles) {
+		t.Fatalf("PlanTarget = %d agents, %d skills; want %d and %d",
+			len(res.Agents), len(res.Skills), len(targetAgents), len(targetSkillFiles))
+	}
+}
+
+func TestPlanTarget_ListsTargetItems(t *testing.T) {
+	dst := makeTargetTree(t)
+
+	res, err := PlanTarget(Options{Target: dst})
+	if err != nil {
+		t.Fatalf("PlanTarget: %v", err)
+	}
+
+	wantAgents := []string{"scout.md", "stale.md", "worker.md"}
+	if got := targetItemNames(res.Agents); !slicesEqual(got, wantAgents) {
+		t.Errorf("agents = %v, want %v", got, wantAgents)
+	}
+	wantSkills := []string{"make-plan", "research", "stale"}
+	if got := targetItemNames(res.Skills); !slicesEqual(got, wantSkills) {
+		t.Errorf("skills = %v, want %v", got, wantSkills)
+	}
+
+	for _, it := range res.Agents {
+		if it.Kind != KindAgent {
+			t.Errorf("agent %s Kind = %v, want KindAgent", it.Name, it.Kind)
+		}
+		if info, err := os.Stat(it.Path); err != nil || !info.Mode().IsRegular() {
+			t.Errorf("agent %s Path = %q, which is not a regular file (err %v)", it.Name, it.Path, err)
+		}
+	}
+	for _, it := range res.Skills {
+		if it.Kind != KindSkill {
+			t.Errorf("skill %s Kind = %v, want KindSkill", it.Name, it.Kind)
+		}
+		if info, err := os.Stat(it.Path); err != nil || !info.IsDir() {
+			t.Errorf("skill %s Path = %q, which is not a directory (err %v)", it.Name, it.Path, err)
+		}
+	}
+}
+
+// TestPlanTarget_MissingTargetIsEmptyNotError pins the divergence from Plan:
+// a target that does not exist yet has nothing to remove, which is not an
+// error the way a missing source is.
+func TestPlanTarget_MissingTargetIsEmptyNotError(t *testing.T) {
+	dst := filepath.Join(t.TempDir(), "not-created-yet")
+
+	res, err := PlanTarget(Options{Target: dst})
+	if err != nil {
+		t.Fatalf("PlanTarget on a nonexistent target: %v", err)
+	}
+	if len(res.Agents) != 0 || len(res.Skills) != 0 {
+		t.Errorf("PlanTarget = %+v, want empty lists", res)
+	}
+}
+
+// TestPlanTarget_EmptyTargetDirsAreEmptyNotError covers the other half of the
+// divergence: Plan rejects a source shipping neither agents/ nor skills/,
+// but a target with neither is just a fresh target.
+func TestPlanTarget_EmptyTargetDirsAreEmptyNotError(t *testing.T) {
+	dst := t.TempDir()
+
+	res, err := PlanTarget(Options{Target: dst})
+	if err != nil {
+		t.Fatalf("PlanTarget on a target with neither agents/ nor skills/: %v", err)
+	}
+	if len(res.Agents) != 0 || len(res.Skills) != 0 {
+		t.Errorf("PlanTarget = %+v, want empty lists", res)
+	}
+}
+
+func TestPlanTarget_ErrorEmptyTargetOption(t *testing.T) {
+	_, err := PlanTarget(Options{})
+	if err == nil {
+		t.Fatal("PlanTarget with an empty Target returned nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "Target") {
+		t.Errorf("error %q does not name Target as the problem", err.Error())
+	}
+}
+
+func TestPlanTarget_OnlyAgents(t *testing.T) {
+	dst := makeTargetTree(t)
+
+	res, err := PlanTarget(Options{Target: dst, OnlyAgents: true})
+	if err != nil {
+		t.Fatalf("PlanTarget: %v", err)
+	}
+	if len(res.Agents) != len(targetAgents) {
+		t.Errorf("agents = %v, want all %d", targetItemNames(res.Agents), len(targetAgents))
+	}
+	if len(res.Skills) != 0 {
+		t.Errorf("skills = %v, want none with --agents", targetItemNames(res.Skills))
+	}
+}
+
+func TestPlanTarget_OnlySkills(t *testing.T) {
+	dst := makeTargetTree(t)
+
+	res, err := PlanTarget(Options{Target: dst, OnlySkills: true})
+	if err != nil {
+		t.Fatalf("PlanTarget: %v", err)
+	}
+	if len(res.Skills) != len(targetSkillFiles) {
+		t.Errorf("skills = %v, want all %d", targetItemNames(res.Skills), len(targetSkillFiles))
+	}
+	if len(res.Agents) != 0 {
+		t.Errorf("agents = %v, want none with --skills", targetItemNames(res.Agents))
+	}
+}
+
+func TestPlanTarget_UninstallNarrowsToNamedItems(t *testing.T) {
+	dst := makeTargetTree(t)
+
+	res, err := PlanTarget(Options{Target: dst, OnlyAgents: true, Uninstall: []string{"scout", "worker"}})
+	if err != nil {
+		t.Fatalf("PlanTarget: %v", err)
+	}
+	// The bare name is what the user types: "scout", never "scout.md".
+	want := []string{"scout.md", "worker.md"}
+	if got := targetItemNames(res.Agents); !slicesEqual(got, want) {
+		t.Errorf("agents = %v, want %v", got, want)
+	}
+	if len(res.Skills) != 0 {
+		t.Errorf("skills = %v, want none", targetItemNames(res.Skills))
+	}
+}
+
+func TestPlanTarget_ErrorUninstallMatchesNothing(t *testing.T) {
+	dst := makeTargetTree(t)
+
+	_, err := PlanTarget(Options{Target: dst, OnlySkills: true, Uninstall: []string{"research", "nope"}})
+	if err == nil {
+		t.Fatal("PlanTarget with an unmatched --uninstall name returned nil error, want an error")
+	}
+	for _, want := range []string{"nope", "skills", "nothing was removed"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err.Error(), want)
+		}
+	}
+	// The name that did match must not be blamed.
+	if strings.Contains(err.Error(), `"research"`) {
+		t.Errorf("error %q blames %q, which does exist in the target", err.Error(), "research")
+	}
+}
+
+func TestPlanTarget_TargetSymlinkResolved(t *testing.T) {
+	real := makeTargetTree(t)
+	link := filepath.Join(t.TempDir(), "link")
+	mustSymlink(t, real, link)
+
+	res, err := PlanTarget(Options{Target: link})
+	if err != nil {
+		t.Fatalf("PlanTarget: %v", err)
+	}
+
+	resolved, err := filepath.EvalSymlinks(real)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(%s): %v", real, err)
+	}
+	scout, ok := findTargetItem(res.Agents, "scout.md")
+	if !ok {
+		t.Fatalf("scout.md missing from %v", targetItemNames(res.Agents))
+	}
+	want := filepath.Join(resolved, "agents", "scout.md")
+	if scout.Path != want {
+		t.Errorf("scout.md Path = %q, want the symlink-resolved %q", scout.Path, want)
+	}
+}
+
+func TestRemoveItem_RemovesAgentFile(t *testing.T) {
+	dst := makeTargetTree(t)
+	path := filepath.Join(dst, "agents", "scout.md")
+
+	if err := RemoveItem(TargetItem{Kind: KindAgent, Name: "scout.md", Path: path}); err != nil {
+		t.Fatalf("RemoveItem: %v", err)
+	}
+	if _, err := os.Lstat(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("agent still present at %s (err %v)", path, err)
+	}
+	// Its neighbours are untouched.
+	if _, err := os.Stat(filepath.Join(dst, "agents", "worker.md")); err != nil {
+		t.Errorf("removing scout.md also disturbed worker.md: %v", err)
+	}
+}
+
+// TestRemoveItem_RemovesWholeSkillDirIncludingUntrackedFiles pins the
+// decision that a skill is one unit: a file this tool never installed goes
+// with it rather than being preserved.
+func TestRemoveItem_RemovesWholeSkillDirIncludingUntrackedFiles(t *testing.T) {
+	dst := makeTargetTree(t)
+	path := filepath.Join(dst, "skills", "research")
+	mustWriteFile(t, filepath.Join(path, "notes.txt"), "hand-added, never installed by this tool")
+	mustWriteFile(t, filepath.Join(path, "scratch", "deep.md"), "nested and hand-added too")
+
+	if err := RemoveItem(TargetItem{Kind: KindSkill, Name: "research", Path: path}); err != nil {
+		t.Fatalf("RemoveItem: %v", err)
+	}
+	if _, err := os.Lstat(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("skill directory still present at %s (err %v)", path, err)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "skills", "make-plan", "SKILL.md")); err != nil {
+		t.Errorf("removing research also disturbed make-plan: %v", err)
+	}
+}
+
+// TestRemoveItem_LeavesParentDirInPlace pins the "empty directory stays"
+// rule: removing the last agent must not take <target>/agents with it.
+func TestRemoveItem_LeavesParentDirInPlace(t *testing.T) {
+	dst := t.TempDir()
+	mustWriteFile(t, filepath.Join(dst, "agents", "only.md"), "the last one")
+
+	if err := RemoveItem(TargetItem{
+		Kind: KindAgent, Name: "only.md", Path: filepath.Join(dst, "agents", "only.md"),
+	}); err != nil {
+		t.Fatalf("RemoveItem: %v", err)
+	}
+
+	info, err := os.Stat(filepath.Join(dst, "agents"))
+	if err != nil {
+		t.Fatalf("%s/agents is gone after removing its last item: %v", dst, err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("%s/agents is no longer a directory", dst)
+	}
+	entries, err := os.ReadDir(filepath.Join(dst, "agents"))
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("agents/ = %v, want empty", entries)
+	}
+}
+
+// TestRemoveItem_MissingAgentErrors pins the os.Remove choice for agents:
+// unlike RemoveAll, it reports a path that is not there.
+func TestRemoveItem_MissingAgentErrors(t *testing.T) {
+	dst := t.TempDir()
+	path := filepath.Join(dst, "agents", "ghost.md")
+
+	err := RemoveItem(TargetItem{Kind: KindAgent, Name: "ghost.md", Path: path})
+	if err == nil {
+		t.Fatal("RemoveItem on a nonexistent agent returned nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "ghost.md") {
+		t.Errorf("error %q does not name the item", err.Error())
+	}
+}
+
+func TestRemoveItem_UnknownKindErrors(t *testing.T) {
+	err := RemoveItem(TargetItem{Kind: Kind(42), Name: "weird", Path: filepath.Join(t.TempDir(), "weird")})
+	if err == nil {
+		t.Fatal("RemoveItem with an unknown Kind returned nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "unknown item kind") {
+		t.Errorf("error %q does not report an unknown kind", err.Error())
+	}
+}
+
+// TestRemoveItem_SymlinkedSkillRemovesLinkNotTarget pins the documented
+// consequence of RemoveAll not following symlinks: the link goes, whatever
+// it pointed at stays.
+func TestRemoveItem_SymlinkedSkillRemovesLinkNotTarget(t *testing.T) {
+	elsewhere := filepath.Join(t.TempDir(), "elsewhere")
+	mustWriteFile(t, filepath.Join(elsewhere, "SKILL.md"), "lives outside the target")
+
+	dst := t.TempDir()
+	link := filepath.Join(dst, "skills", "linked")
+	mustSymlink(t, elsewhere, link)
+
+	if err := RemoveItem(TargetItem{Kind: KindSkill, Name: "linked", Path: link}); err != nil {
+		t.Fatalf("RemoveItem: %v", err)
+	}
+	if _, err := os.Lstat(link); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("symlink still present at %s (err %v)", link, err)
+	}
+	if _, err := os.Stat(filepath.Join(elsewhere, "SKILL.md")); err != nil {
+		t.Errorf("the pointed-at directory was removed along with the link: %v", err)
+	}
+}
+
+// TestRemove_StopsAtFirstError pins Remove's abort-on-first-error policy:
+// agents are removed before skills, so a failing agent must leave the skills
+// alone rather than the loop pressing on.
+func TestRemove_StopsAtFirstError(t *testing.T) {
+	dst := makeTargetTree(t)
+	skillPath := filepath.Join(dst, "skills", "research")
+
+	res := TargetResult{
+		Agents: []TargetItem{
+			{Kind: KindAgent, Name: "ghost.md", Path: filepath.Join(dst, "agents", "ghost.md")},
+			{Kind: KindAgent, Name: "scout.md", Path: filepath.Join(dst, "agents", "scout.md")},
+		},
+		Skills: []TargetItem{
+			{Kind: KindSkill, Name: "research", Path: skillPath},
+		},
+	}
+
+	if err := Remove(res); err == nil {
+		t.Fatal("Remove returned nil error, want the first item's failure")
+	}
+	if _, err := os.Stat(filepath.Join(dst, "agents", "scout.md")); err != nil {
+		t.Errorf("Remove pressed on past the first error and removed scout.md: %v", err)
+	}
+	if _, err := os.Stat(skillPath); err != nil {
+		t.Errorf("Remove pressed on past the first error and removed the skill: %v", err)
+	}
+}
+
+func TestRunUninstall_RemovesNamedItemsOnly(t *testing.T) {
+	dst := makeTargetTree(t)
+
+	res, err := RunUninstall(Options{Target: dst, OnlySkills: true, Uninstall: []string{"stale"}})
+	if err != nil {
+		t.Fatalf("RunUninstall: %v", err)
+	}
+	if got := targetItemNames(res.Skills); !slicesEqual(got, []string{"stale"}) {
+		t.Errorf("removed skills = %v, want [stale]", got)
+	}
+	if len(res.Agents) != 0 {
+		t.Errorf("removed agents = %v, want none", targetItemNames(res.Agents))
+	}
+
+	if _, err := os.Lstat(filepath.Join(dst, "skills", "stale")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("skill stale still present (err %v)", err)
+	}
+	// Every other item in the target survives.
+	for name := range targetAgents {
+		if _, err := os.Stat(filepath.Join(dst, "agents", name)); err != nil {
+			t.Errorf("agent %s was removed but was never named: %v", name, err)
+		}
+	}
+	for name := range targetSkillFiles {
+		if name == "stale" {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(dst, "skills", name, "SKILL.md")); err != nil {
+			t.Errorf("skill %s was removed but was never named: %v", name, err)
+		}
+	}
+}
+
+func TestRunUninstall_DryRunTouchesNothing(t *testing.T) {
+	dst := makeTargetTree(t)
+	before := snapshotTree(t, dst)
+
+	res, err := RunUninstall(Options{
+		Target: dst, OnlySkills: true, DryRun: true, Uninstall: []string{"research", "stale"},
+	})
+	if err != nil {
+		t.Fatalf("RunUninstall: %v", err)
+	}
+
+	after := snapshotTree(t, dst)
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("dry run touched the target.\nbefore: %+v\nafter:  %+v", before, after)
+	}
+	// The report still describes what would have gone.
+	want := []string{"research", "stale"}
+	if got := targetItemNames(res.Skills); !slicesEqual(got, want) {
+		t.Errorf("dry-run result skills = %v, want %v", got, want)
+	}
+}
+
+// TestRunUninstall_PartialNameFailureRemovesNothing is the design's central
+// safety promise: a typo in the third name never leaves the first two
+// already gone.
+func TestRunUninstall_PartialNameFailureRemovesNothing(t *testing.T) {
+	dst := makeTargetTree(t)
+	before := snapshotTree(t, dst)
+
+	_, err := RunUninstall(Options{
+		Target: dst, OnlySkills: true, Uninstall: []string{"research", "stale", "typo"},
+	})
+	if err == nil {
+		t.Fatal("RunUninstall with one bad name returned nil error, want an error")
+	}
+	if !strings.Contains(err.Error(), "typo") {
+		t.Errorf("error %q does not name the mistyped name", err.Error())
+	}
+
+	after := snapshotTree(t, dst)
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("a run that failed name verification still removed something.\nbefore: %+v\nafter:  %+v", before, after)
+	}
+}
+
+// TestRunUninstall_NeverTouchesAnythingOutsideAgentsAndSkills guards the
+// promise in the usage text: nothing outside the target's agents/ and
+// skills/ is ever read, written, or removed.
+func TestRunUninstall_NeverTouchesAnythingOutsideAgentsAndSkills(t *testing.T) {
+	dst := makeTargetTree(t)
+	mustWriteFile(t, filepath.Join(dst, "settings.json"), `{"kept": true}`)
+	mustWriteFile(t, filepath.Join(dst, "projects", "x", "notes.md"), "kept too")
+
+	if _, err := RunUninstall(Options{
+		Target: dst, OnlyAgents: true, Uninstall: []string{"scout", "stale", "worker"},
+	}); err != nil {
+		t.Fatalf("RunUninstall: %v", err)
+	}
+
+	if got, err := os.ReadFile(filepath.Join(dst, "settings.json")); err != nil {
+		t.Errorf("settings.json did not survive: %v", err)
+	} else if string(got) != `{"kept": true}` {
+		t.Errorf("settings.json content = %q, want it unchanged", got)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "projects", "x", "notes.md")); err != nil {
+		t.Errorf("projects/x/notes.md did not survive: %v", err)
+	}
+	// And the skills the run was not scoped to are all still there.
+	for name := range targetSkillFiles {
+		if _, err := os.Stat(filepath.Join(dst, "skills", name, "SKILL.md")); err != nil {
+			t.Errorf("skill %s was removed by an --agents-scoped run: %v", name, err)
+		}
+	}
+}
+
+// TestPlanInteractive_MarksInSource is the cross-reference the -i picker
+// runs on: every target item the source also ships is flagged, and the ones
+// only the target has are not.
+func TestPlanInteractive_MarksInSource(t *testing.T) {
+	src := makeSourceTree(t)
+	dst := makeTargetTree(t)
+
+	res, tgt, err := PlanInteractive(Options{Source: src, Target: dst})
+	if err != nil {
+		t.Fatalf("PlanInteractive: %v", err)
+	}
+
+	// The source side must be exactly what Plan alone produces.
+	if len(res.Agents) != len(sourceAgents) || len(res.Skills) != len(sourceSkillFiles) {
+		t.Fatalf("source side = %d agents, %d skills; want %d and %d",
+			len(res.Agents), len(res.Skills), len(sourceAgents), len(sourceSkillFiles))
+	}
+
+	wantAgents := map[string]bool{"scout.md": true, "worker.md": true, "stale.md": false}
+	for name, want := range wantAgents {
+		it, ok := findTargetItem(tgt.Agents, name)
+		if !ok {
+			t.Fatalf("target agent %q missing from the plan", name)
+		}
+		if it.InSource != want {
+			t.Errorf("target agent %q InSource = %v, want %v", name, it.InSource, want)
+		}
+		wantGroup := GroupOnlyInTarget
+		if want {
+			wantGroup = GroupAlsoInSource
+		}
+		if got := it.Group(); got != wantGroup {
+			t.Errorf("target agent %q Group() = %v, want %v", name, got, wantGroup)
+		}
+	}
+
+	wantSkills := map[string]bool{"research": true, "make-plan": true, "stale": false}
+	for name, want := range wantSkills {
+		it, ok := findTargetItem(tgt.Skills, name)
+		if !ok {
+			t.Fatalf("target skill %q missing from the plan", name)
+		}
+		if it.InSource != want {
+			t.Errorf("target skill %q InSource = %v, want %v", name, it.InSource, want)
+		}
+	}
+}
+
+// TestPlanInteractive_InSourceIsPerKind pins the matching to the {Kind,
+// Name} pair rather than the name alone: a skill directory named
+// "alpha.md" must not be flagged just because the source ships an *agent*
+// by that name, and vice versa.
+func TestPlanInteractive_InSourceIsPerKind(t *testing.T) {
+	src := t.TempDir()
+	mustWriteFile(t, filepath.Join(src, "agents", "alpha.md"), "alpha agent")
+	mustWriteFile(t, filepath.Join(src, "skills", "beta", "SKILL.md"), "beta skill")
+
+	dst := t.TempDir()
+	// A skill directory whose name collides with the source's agent name,
+	// and an agent file whose name collides with the source's skill name.
+	mustWriteFile(t, filepath.Join(dst, "skills", "alpha.md", "SKILL.md"), "not the same thing")
+	mustWriteFile(t, filepath.Join(dst, "agents", "beta.md"), "not the same thing either")
+
+	_, tgt, err := PlanInteractive(Options{Source: src, Target: dst})
+	if err != nil {
+		t.Fatalf("PlanInteractive: %v", err)
+	}
+
+	skill, ok := findTargetItem(tgt.Skills, "alpha.md")
+	if !ok {
+		t.Fatalf("target skill %q missing from the plan", "alpha.md")
+	}
+	if skill.InSource {
+		t.Errorf(`skill "alpha.md" InSource = true; the source ships an agent by that name, not a skill`)
+	}
+
+	agent, ok := findTargetItem(tgt.Agents, "beta.md")
+	if !ok {
+		t.Fatalf("target agent %q missing from the plan", "beta.md")
+	}
+	if agent.InSource {
+		t.Errorf(`agent "beta.md" InSource = true; the source ships no agent by that name`)
+	}
+}
+
+// TestPlanInteractive_PropagatesPlanError checks that -i still gets the
+// full source validation: a bad source fails the whole call rather than
+// quietly yielding an empty install side next to a usable uninstall side.
+func TestPlanInteractive_PropagatesPlanError(t *testing.T) {
+	dst := makeTargetTree(t)
+
+	for _, tc := range []struct {
+		name string
+		opts Options
+	}{
+		{"empty source", Options{Target: dst}},
+		{"source does not exist", Options{Source: filepath.Join(t.TempDir(), "nope"), Target: dst}},
+		{"source ships neither agents/ nor skills/", Options{Source: t.TempDir(), Target: dst}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res, tgt, err := PlanInteractive(tc.opts)
+			if err == nil {
+				t.Fatalf("PlanInteractive(%+v) = nil error, want an error", tc.opts)
+			}
+			if len(res.Agents) != 0 || len(res.Skills) != 0 {
+				t.Errorf("Result on error = %+v, want zero value", res)
+			}
+			if len(tgt.Agents) != 0 || len(tgt.Skills) != 0 {
+				t.Errorf("TargetResult on error = %+v, want zero value", tgt)
+			}
+		})
+	}
+}
+
+// TestPlanInteractive_EmptyTargetGivesEmptyTargetResult covers the
+// first-run case: a target that does not exist yet has nothing to remove,
+// which is not an error, and the install side still plans normally.
+func TestPlanInteractive_EmptyTargetGivesEmptyTargetResult(t *testing.T) {
+	src := makeSourceTree(t)
+	dst := filepath.Join(t.TempDir(), "not-created-yet")
+
+	res, tgt, err := PlanInteractive(Options{Source: src, Target: dst})
+	if err != nil {
+		t.Fatalf("PlanInteractive against a fresh target: %v", err)
+	}
+	if len(tgt.Agents) != 0 || len(tgt.Skills) != 0 {
+		t.Errorf("TargetResult = %+v, want empty lists", tgt)
+	}
+	if len(res.Agents) != len(sourceAgents) || len(res.Skills) != len(sourceSkillFiles) {
+		t.Fatalf("source side = %d agents, %d skills; want %d and %d",
+			len(res.Agents), len(res.Skills), len(sourceAgents), len(sourceSkillFiles))
+	}
+	for _, it := range allItems(res) {
+		if it.Exists {
+			t.Errorf("item %q Exists = true against a fresh target", it.Name)
+		}
 	}
 }

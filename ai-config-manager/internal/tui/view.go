@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -15,7 +16,11 @@ var (
 	headingStyle   = lipgloss.NewStyle().Bold(true)
 	dimStyle       = lipgloss.NewStyle().Faint(true)
 	helpStyle      = lipgloss.NewStyle().Faint(true)
-	confirmBox     = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1)
+	// No colour: the existing palette is Bold/Faint only, and "[!]" plus
+	// the word "conflict" carries the meaning on a monochrome terminal
+	// where a colour would not.
+	conflictStyle = lipgloss.NewStyle().Bold(true)
+	confirmBox    = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1)
 )
 
 // View renders the current frame.
@@ -32,8 +37,10 @@ func (m Model) View() tea.View {
 		s = m.viewBrowse()
 	case stateConfirm:
 		s = m.viewConfirm()
-	case stateInstalling:
-		s = m.viewInstalling()
+	case stateConflict:
+		s = m.viewConflict()
+	case stateApplying:
+		s = m.viewApplying()
 	case stateDone:
 		s = m.viewDone()
 	}
@@ -60,7 +67,7 @@ func fitHeight(s string, h int) string {
 	return strings.Join(lines, "\n")
 }
 
-// viewBrowse renders the two-tab, grouped, scrollable, searchable list.
+// viewBrowse renders the four-tab, grouped, scrollable, searchable list.
 func (m Model) viewBrowse() string {
 	lines := []string{m.tabBar(), ""}
 
@@ -77,28 +84,42 @@ func (m Model) viewBrowse() string {
 	return strings.Join(lines, "\n")
 }
 
-// tabBar renders "Agents (n)" / "Skills (n)" with the active tab bold, so
-// a selection made on the tab the user isn't looking at stays visible as a
-// count.
+// tabBar renders all four tabs with the active one bold. An install tab's
+// count is signed "+" and an uninstall tab's "-": one number means "will be
+// written", the other "will be erased", and a sign carries that distinction
+// without colour.
+//
+// The separator is two spaces rather than three, and the whole bar is
+// capped at the terminal width. A tab bar that wraps onto a second line
+// would add a line to the frame, which is precisely what frameHeight exists
+// to prevent.
 func (m Model) tabBar() string {
-	agents := fmt.Sprintf("Agents (%d)", m.selectedCount(installer.KindAgent))
-	skills := fmt.Sprintf("Skills (%d)", m.selectedCount(installer.KindSkill))
-	if m.tab == 0 {
-		agents = activeTabStyle.Render(agents)
-	} else {
-		skills = activeTabStyle.Render(skills)
+	var parts []string
+	for i, d := range tabs {
+		sign := "+"
+		if d.action == actionRemove {
+			sign = "-"
+		}
+		label := fmt.Sprintf("%s (%s%d)", d.label, sign, m.markCount(i))
+		if i == m.tab {
+			label = activeTabStyle.Render(label)
+		}
+		parts = append(parts, label)
 	}
-	return agents + "   " + skills
+	return lipgloss.NewStyle().MaxWidth(m.width).Render(strings.Join(parts, "  "))
 }
 
-// helpLine lists the real keys. Its wording changes when nothing is
-// selected, since enter has nothing to do in that case — that changed
-// wording is the hint the key-handling table promises.
+// helpLine lists the real keys. Its wording changes when nothing is marked
+// (enter has nothing to do) and when a conflict exists (enter will refuse).
 func (m Model) helpLine() string {
-	if len(m.selected) == 0 {
-		return "j/k move · h/l tabs · space select · enter (nothing selected yet) · / search · esc quit"
+	switch {
+	case len(m.conflicts()) > 0:
+		return "j/k move · h/l tabs · space mark · enter (conflicts) · / search · esc quit"
+	case len(m.selected)+len(m.marked) == 0:
+		return "j/k move · h/l tabs · space mark · enter (nothing marked yet) · / search · esc quit"
+	default:
+		return "j/k move · h/l tabs · space mark · enter apply · / search · esc quit"
 	}
-	return "j/k move · h/l tabs · space select · enter install · / search · esc quit"
 }
 
 // listLines renders the tab's content below the tab bar and search/filter
@@ -106,14 +127,12 @@ func (m Model) helpLine() string {
 // current query matches none of them) or the scrolled window of rows plus
 // its scroll indicators.
 func (m Model) listLines() []string {
-	underlying := m.res.Agents
-	kindWord := "agents"
-	if m.tab == 1 {
-		underlying = m.res.Skills
-		kindWord = "skills"
-	}
-	if len(underlying) == 0 {
-		return []string{fmt.Sprintf("no %s found", kindWord)}
+	// The kind word and the underlying list both come from the tab table,
+	// so a missing or empty target directory simply shows an empty
+	// uninstall tab rather than an error, and the install tabs keep
+	// working normally.
+	if len(m.tabEntries(m.tab)) == 0 {
+		return []string{fmt.Sprintf("no %s found", tabs[m.tab].kind)}
 	}
 
 	allRows := m.rows(m.tab)
@@ -144,7 +163,10 @@ func (m Model) listLines() []string {
 
 // renderRow draws one row: a styled heading, or a "cursor + checkbox +
 // name" item row (e.g. "> [x] scout.md"). Up-to-date rows are dimmed and
-// drawn without a checkbox, since they cannot be chosen.
+// drawn without a checkbox, since they cannot be chosen. A conflicted row
+// is marked in both tabs at once — inConflict does not care which tab is
+// asking — so the user sees it while still picking rather than after
+// marking twenty things.
 func (m Model) renderRow(r row) string {
 	if r.heading != "" {
 		return headingStyle.Render(r.heading + ":")
@@ -155,50 +177,122 @@ func (m Model) renderRow(r row) string {
 		mark = "> "
 	}
 
-	if r.item.Group() == installer.GroupUpToDate {
-		return dimStyle.Render(mark + r.item.Name)
+	if !r.entry.selectable {
+		return dimStyle.Render(mark + r.entry.name)
 	}
 
+	key := selKey{Kind: r.entry.kind, Name: r.entry.name}
 	box := "[ ]"
-	if m.selected[selKey{Kind: r.item.Kind, Name: r.item.Name}] {
+	switch {
+	case m.inConflict(key):
+		box = "[!]"
+	case m.marks(tabs[m.tab].action)[key]:
 		box = "[x]"
 	}
-	return mark + box + " " + r.item.Name
+	line := mark + box + " " + r.entry.name
+	if m.inConflict(key) {
+		line += conflictStyle.Render("  (conflict)")
+	}
+	return line
 }
 
 // viewConfirm renders the confirmation step: a bordered box listing the
-// selected items grouped by kind, in place of the list — not composited
-// or overlaid on top of it.
+// marked items in two sections, in place of the list — not composited or
+// overlaid on top of it.
 func (m Model) viewConfirm() string {
-	names := appendNames([]string{"agents:"}, m.selectedNames(installer.KindAgent))
-	names = appendNames(append(names, "skills:"), m.selectedNames(installer.KindSkill))
-	names = clampNames(names, m.frameHeight()-confirmChrome)
+	lines := clampNames(m.markedLines(), m.frameHeight()-confirmChrome)
 
 	var b strings.Builder
-	for _, line := range names {
+	for _, line := range lines {
 		fmt.Fprintln(&b, line)
 	}
-	fmt.Fprintf(&b, "\n%d selected\n\nenter install · esc cancel", len(m.selected))
+	fmt.Fprintf(&b, "\n%d to remove, %d to install\n\nenter apply · esc cancel",
+		len(m.marked), len(m.selected))
 
 	return confirmBox.Render(b.String())
 }
 
-// appendNames appends one indented line per name, or "(none)" when names is
-// empty.
-func appendNames(lines, names []string) []string {
-	if len(names) == 0 {
-		return append(lines, "  (none)")
+// viewConflict renders the hard block on marking the same item for install
+// and for deletion. It is a state of its own, in the same bordered-box
+// shape as viewConfirm, rather than a warning line under the list: the
+// design requires that enter list every conflicting item by name, and an
+// arbitrary number of names cannot go on one line without either wrapping —
+// which breaks the fixed frame height — or truncating, which drops the very
+// names it promised to list.
+func (m Model) viewConflict() string {
+	lines := []string{headingStyle.Render("marked for both install and removal — unmark one side of each:")}
+	for _, k := range m.conflicts() {
+		lines = append(lines, fmt.Sprintf("  %-6s %s", kindNoun(k.Kind), k.Name))
 	}
-	for _, n := range names {
-		lines = append(lines, "  "+n)
+	lines = clampNames(lines, m.frameHeight()-conflictChrome)
+
+	var b strings.Builder
+	for _, line := range lines {
+		fmt.Fprintln(&b, line)
+	}
+	fmt.Fprint(&b, "\nesc back")
+
+	return confirmBox.Render(b.String())
+}
+
+// markedLines returns the confirmation box's item lines: a "remove" section
+// then an "install" section, each name prefixed with the same sign the tab
+// bar uses and labelled with its kind. A section with nothing in it is
+// omitted entirely rather than printed as "(none)" — an empty destructive
+// section is noise on a screen whose whole job is to make the destructive
+// part impossible to miss.
+//
+// The destructive marking is carried by three things at once — the section
+// coming first, the "-" sign, and the words "deletes these from the target"
+// — rather than by colour, matching the rest of the UI's Bold/Faint-only
+// palette.
+func (m Model) markedLines() []string {
+	var lines []string
+
+	if removals := sortedKeys(m.marked); len(removals) > 0 {
+		lines = append(lines, headingStyle.Render("remove — deletes these from the target:"))
+		for _, k := range removals {
+			lines = append(lines, fmt.Sprintf("  - %-6s %s", kindNoun(k.Kind), k.Name))
+		}
+	}
+	if installs := sortedKeys(m.selected); len(installs) > 0 {
+		lines = append(lines, headingStyle.Render("install:"))
+		for _, k := range installs {
+			lines = append(lines, fmt.Sprintf("  + %-6s %s", kindNoun(k.Kind), k.Name))
+		}
 	}
 	return lines
+}
+
+// sortedKeys returns set's keys ordered by Kind then Name, so the confirm
+// box lists them deterministically.
+func sortedKeys(set map[selKey]bool) []selKey {
+	keys := make([]selKey, 0, len(set))
+	for k := range set {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].Kind != keys[j].Kind {
+			return keys[i].Kind < keys[j].Kind
+		}
+		return keys[i].Name < keys[j].Name
+	})
+	return keys
+}
+
+// kindNoun names one item of a Kind ("agent", "skill"), unlike
+// Kind.String(), which names the directory the kind lives under.
+func kindNoun(k installer.Kind) string {
+	if k == installer.KindSkill {
+		return "skill"
+	}
+	return "agent"
 }
 
 // clampNames drops names off the end until the block fits in budget lines,
 // replacing what it dropped with a count of them. frameHeight is sized so
 // that the full list fits whenever the terminal is tall enough to show it,
-// so this only bites on a terminal too short for the selection — where the
+// so this only bites on a terminal too short for what is marked — where the
 // alternative is a box whose bottom border and, worse, whose "esc cancel"
 // hint are off the frame.
 func clampNames(names []string, budget int) []string {
@@ -212,13 +306,13 @@ func clampNames(names []string, budget int) []string {
 	return append(names[:budget-1], fmt.Sprintf("  … %d more", hidden))
 }
 
-// viewInstalling renders the brief in-progress state between confirming
-// and the install command finishing.
-func (m Model) viewInstalling() string {
-	return fmt.Sprintf("installing %d items…", len(m.selected))
+// viewApplying renders the brief in-progress state between confirming and
+// the apply command finishing.
+func (m Model) viewApplying() string {
+	return fmt.Sprintf("applying %d changes…", len(m.selected)+len(m.marked))
 }
 
-// viewDone renders the single frame between installedMsg arriving and the
+// viewDone renders the single frame between appliedMsg arriving and the
 // program actually exiting. It is necessarily brief: the real report is
 // printed by the caller, via RenderReport, only after Run returns —
 // because Bubble Tea v2's inline renderer erases this program's last frame

@@ -209,3 +209,125 @@ func TestRender_BannerUsesEmDash(t *testing.T) {
 		t.Fatalf("banner line %q contains a plain hyphen instead of an em dash", line)
 	}
 }
+
+func sampleTargetResult() TargetResult {
+	return TargetResult{
+		Agents: []TargetItem{
+			{Kind: KindAgent, Name: "scout.md"},
+			{Kind: KindAgent, Name: "worker.md"},
+		},
+		Skills: []TargetItem{
+			{Kind: KindSkill, Name: "make-plan"},
+			{Kind: KindSkill, Name: "research"},
+		},
+	}
+}
+
+const wantRemovedOutput = `AGENTS
+------
+removed    scout.md
+removed    worker.md
+
+SKILLS
+------
+removed    make-plan
+removed    research
+
+4 removed
+`
+
+func TestRenderRemoved_ExactOutput(t *testing.T) {
+	var buf bytes.Buffer
+	if err := RenderRemoved(&buf, sampleTargetResult(), false); err != nil {
+		t.Fatalf("RenderRemoved: %v", err)
+	}
+	if got := buf.String(); got != wantRemovedOutput {
+		t.Fatalf("RenderRemoved output mismatch.\ngot:\n%s\nwant:\n%s", got, wantRemovedOutput)
+	}
+}
+
+// TestRenderRemoved_DryRunBanner pins both the wording and the em dash
+// (U+2014), matching Render's own banner.
+func TestRenderRemoved_DryRunBanner(t *testing.T) {
+	var buf bytes.Buffer
+	if err := RenderRemoved(&buf, sampleTargetResult(), true); err != nil {
+		t.Fatalf("RenderRemoved: %v", err)
+	}
+	want := "DRY RUN — nothing removed\n\n" + wantRemovedOutput
+	if got := buf.String(); got != want {
+		t.Fatalf("RenderRemoved output mismatch.\ngot:\n%s\nwant:\n%s", got, want)
+	}
+	line := strings.SplitN(buf.String(), "\n", 2)[0]
+	if !strings.Contains(line, "—") {
+		t.Fatalf("banner line %q does not contain an em dash (U+2014)", line)
+	}
+	if strings.Contains(line, " - ") {
+		t.Fatalf("banner line %q contains a plain hyphen instead of an em dash", line)
+	}
+}
+
+func TestRenderRemoved_BothSectionsEmpty(t *testing.T) {
+	var buf bytes.Buffer
+	if err := RenderRemoved(&buf, TargetResult{}, false); err != nil {
+		t.Fatalf("RenderRemoved: %v", err)
+	}
+	want := "AGENTS\n------\n(none)\n\nSKILLS\n------\n(none)\n\n0 removed\n"
+	if got := buf.String(); got != want {
+		t.Fatalf("RenderRemoved output mismatch.\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestRenderRemoved_SortsByNameRegardlessOfInputOrder(t *testing.T) {
+	res := TargetResult{
+		Agents: []TargetItem{
+			{Kind: KindAgent, Name: "worker.md"},
+			{Kind: KindAgent, Name: "scout.md"},
+		},
+		Skills: []TargetItem{
+			{Kind: KindSkill, Name: "research"},
+			{Kind: KindSkill, Name: "make-plan"},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := RenderRemoved(&buf, res, false); err != nil {
+		t.Fatalf("RenderRemoved: %v", err)
+	}
+	if got := buf.String(); got != wantRemovedOutput {
+		t.Fatalf("RenderRemoved output mismatch with scrambled input.\ngot:\n%s\nwant:\n%s", got, wantRemovedOutput)
+	}
+}
+
+func TestRenderRemoved_DoesNotMutateInput(t *testing.T) {
+	res := TargetResult{
+		Agents: []TargetItem{
+			{Kind: KindAgent, Name: "worker.md"},
+			{Kind: KindAgent, Name: "scout.md"},
+		},
+		Skills: []TargetItem{
+			{Kind: KindSkill, Name: "research"},
+			{Kind: KindSkill, Name: "make-plan"},
+		},
+	}
+	wantAgents := targetItemNames(res.Agents)
+	wantSkills := targetItemNames(res.Skills)
+
+	var buf bytes.Buffer
+	if err := RenderRemoved(&buf, res, false); err != nil {
+		t.Fatalf("RenderRemoved: %v", err)
+	}
+
+	if got := targetItemNames(res.Agents); !slicesEqual(got, wantAgents) {
+		t.Errorf("Agents order mutated: got %v, want %v", got, wantAgents)
+	}
+	if got := targetItemNames(res.Skills); !slicesEqual(got, wantSkills) {
+		t.Errorf("Skills order mutated: got %v, want %v", got, wantSkills)
+	}
+}
+
+func TestRenderRemoved_WriterErrorIsReturned(t *testing.T) {
+	err := RenderRemoved(errWriter{}, sampleTargetResult(), true)
+	if err == nil {
+		t.Fatal("RenderRemoved with a failing writer returned nil error, want non-nil")
+	}
+}

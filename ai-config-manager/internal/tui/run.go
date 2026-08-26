@@ -8,13 +8,14 @@ import (
 	"github.com/atfoc/agents/ai-config-manager/internal/installer"
 )
 
-// Run shows the interactive picker for res and reports what the user did.
+// Run shows the interactive picker for res and tgt and reports what the
+// user did.
 //
 // It passes no program options: no alternate screen, no mouse. Model.View
 // never sets tea.View.AltScreen, which is what makes the program render
 // inline, in the caller's own terminal, rather than taking it over.
-func Run(res installer.Result) (Outcome, error) {
-	m := New(res, installer.ApplyItem)
+func Run(res installer.Result, tgt installer.TargetResult) (Outcome, error) {
+	m := New(res, tgt, installer.ApplyItem, installer.RemoveItem)
 
 	finalModel, err := tea.NewProgram(m).Run()
 	if err != nil {

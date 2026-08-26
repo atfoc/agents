@@ -327,3 +327,234 @@ func slicesEqual(a, b []string) bool {
 	}
 	return true
 }
+
+func targetItemNames(items []TargetItem) []string {
+	names := make([]string, len(items))
+	for i, item := range items {
+		names[i] = item.Name
+	}
+	return names
+}
+
+func TestDiscoverTargetAgents_FiltersByExtensionAndKind(t *testing.T) {
+	dstRoot := t.TempDir()
+
+	mustWriteFile(t, filepath.Join(dstRoot, "agents", "scout.md"), "scout")
+	mustWriteFile(t, filepath.Join(dstRoot, "agents", "notes.txt"), "not an agent")
+	// The trap: a directory whose name ends in .md must not be mistaken for
+	// an agent file.
+	mustMkdir(t, filepath.Join(dstRoot, "agents", "c.md"))
+
+	items, err := discoverTargetAgents(dstRoot)
+	if err != nil {
+		t.Fatalf("discoverTargetAgents: %v", err)
+	}
+	if got := targetItemNames(items); len(got) != 1 || got[0] != "scout.md" {
+		t.Fatalf("discoverTargetAgents = %v, want [scout.md]", got)
+	}
+}
+
+func TestDiscoverTargetAgents_SortedByName(t *testing.T) {
+	dstRoot := t.TempDir()
+
+	for _, name := range []string{"zeta.md", "alpha.md", "mid.md"} {
+		mustWriteFile(t, filepath.Join(dstRoot, "agents", name), name)
+	}
+
+	items, err := discoverTargetAgents(dstRoot)
+	if err != nil {
+		t.Fatalf("discoverTargetAgents: %v", err)
+	}
+	want := []string{"alpha.md", "mid.md", "zeta.md"}
+	if got := targetItemNames(items); !slicesEqual(got, want) {
+		t.Fatalf("discoverTargetAgents order = %v, want %v", got, want)
+	}
+}
+
+func TestDiscoverTargetAgents_SymlinkToFileIncluded(t *testing.T) {
+	dstRoot := t.TempDir()
+
+	real := filepath.Join(t.TempDir(), "actual.md")
+	mustWriteFile(t, real, "real content")
+	mustSymlink(t, real, filepath.Join(dstRoot, "agents", "linked.md"))
+
+	items, err := discoverTargetAgents(dstRoot)
+	if err != nil {
+		t.Fatalf("discoverTargetAgents: %v", err)
+	}
+	if got := targetItemNames(items); len(got) != 1 || got[0] != "linked.md" {
+		t.Fatalf("discoverTargetAgents = %v, want [linked.md]", got)
+	}
+}
+
+func TestDiscoverTargetAgents_DanglingSymlinkSkipped(t *testing.T) {
+	dstRoot := t.TempDir()
+
+	mustWriteFile(t, filepath.Join(dstRoot, "agents", "scout.md"), "scout")
+	// Deliberate divergence from discoverAgents, which treats a failing Stat
+	// as fatal: the target is not under this tool's control, so junk left
+	// there must not stop the run.
+	mustSymlink(t, filepath.Join(t.TempDir(), "gone.md"), filepath.Join(dstRoot, "agents", "dangling.md"))
+
+	items, err := discoverTargetAgents(dstRoot)
+	if err != nil {
+		t.Fatalf("discoverTargetAgents: %v", err)
+	}
+	if got := targetItemNames(items); len(got) != 1 || got[0] != "scout.md" {
+		t.Fatalf("discoverTargetAgents = %v, want [scout.md]", got)
+	}
+}
+
+func TestDiscoverTargetAgents_MissingDirIsNotError(t *testing.T) {
+	dstRoot := t.TempDir()
+
+	items, err := discoverTargetAgents(dstRoot)
+	if err != nil {
+		t.Fatalf("discoverTargetAgents: %v", err)
+	}
+	if items != nil {
+		t.Fatalf("discoverTargetAgents = %v, want nil", items)
+	}
+}
+
+func TestDiscoverTargetAgents_PathAndZeroValues(t *testing.T) {
+	dstRoot := t.TempDir()
+
+	mustWriteFile(t, filepath.Join(dstRoot, "agents", "scout.md"), "scout")
+
+	items, err := discoverTargetAgents(dstRoot)
+	if err != nil {
+		t.Fatalf("discoverTargetAgents: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("discoverTargetAgents returned %d items, want 1", len(items))
+	}
+	item := items[0]
+
+	wantPath := filepath.Join(dstRoot, "agents", "scout.md")
+	if item.Path != wantPath {
+		t.Errorf("Path = %q, want %q", item.Path, wantPath)
+	}
+	if item.Kind != KindAgent {
+		t.Errorf("Kind = %v, want KindAgent", item.Kind)
+	}
+	if item.InSource {
+		t.Errorf("InSource = true, want false (only the planner fills it in)")
+	}
+}
+
+func TestDiscoverTargetAgents_AgentsPathIsRegularFile(t *testing.T) {
+	dstRoot := t.TempDir()
+
+	// agents/ exists but as a plain file, not a directory: a real error, not
+	// a silent empty result indistinguishable from "no agents/ at all".
+	mustWriteFile(t, filepath.Join(dstRoot, "agents"), "not a directory")
+
+	items, err := discoverTargetAgents(dstRoot)
+	if err == nil {
+		t.Fatalf("discoverTargetAgents = %v, %v, want an error", items, err)
+	}
+}
+
+func TestDiscoverTargetSkills_FiltersByKind(t *testing.T) {
+	dstRoot := t.TempDir()
+
+	mustWriteFile(t, filepath.Join(dstRoot, "skills", "research", "SKILL.md"), "research skill")
+	mustWriteFile(t, filepath.Join(dstRoot, "skills", "loose.txt"), "not a skill")
+
+	items, err := discoverTargetSkills(dstRoot)
+	if err != nil {
+		t.Fatalf("discoverTargetSkills: %v", err)
+	}
+	if got := targetItemNames(items); len(got) != 1 || got[0] != "research" {
+		t.Fatalf("discoverTargetSkills = %v, want [research]", got)
+	}
+}
+
+func TestDiscoverTargetSkills_DirWithoutSkillMdExcluded(t *testing.T) {
+	dstRoot := t.TempDir()
+
+	mustWriteFile(t, filepath.Join(dstRoot, "skills", "research", "SKILL.md"), "research skill")
+	// A directory under skills/ with no SKILL.md isn't a skill, no matter
+	// what else it contains, and this tool never offers it for removal.
+	mustWriteFile(t, filepath.Join(dstRoot, "skills", "not-a-skill", "notes.md"), "just notes")
+
+	items, err := discoverTargetSkills(dstRoot)
+	if err != nil {
+		t.Fatalf("discoverTargetSkills: %v", err)
+	}
+	if got := targetItemNames(items); len(got) != 1 || got[0] != "research" {
+		t.Fatalf("discoverTargetSkills = %v, want [research]", got)
+	}
+}
+
+func TestDiscoverTargetSkills_SymlinkToDirIncluded(t *testing.T) {
+	dstRoot := t.TempDir()
+
+	realDir := filepath.Join(t.TempDir(), "actual-skill")
+	mustWriteFile(t, filepath.Join(realDir, "SKILL.md"), "real skill")
+	mustSymlink(t, realDir, filepath.Join(dstRoot, "skills", "linked-skill"))
+
+	items, err := discoverTargetSkills(dstRoot)
+	if err != nil {
+		t.Fatalf("discoverTargetSkills: %v", err)
+	}
+	if got := targetItemNames(items); len(got) != 1 || got[0] != "linked-skill" {
+		t.Fatalf("discoverTargetSkills = %v, want [linked-skill]", got)
+	}
+}
+
+func TestDiscoverTargetSkills_SortedByName(t *testing.T) {
+	dstRoot := t.TempDir()
+
+	for _, name := range []string{"zeta", "alpha", "mid"} {
+		mustWriteFile(t, filepath.Join(dstRoot, "skills", name, "SKILL.md"), name)
+	}
+
+	items, err := discoverTargetSkills(dstRoot)
+	if err != nil {
+		t.Fatalf("discoverTargetSkills: %v", err)
+	}
+	want := []string{"alpha", "mid", "zeta"}
+	if got := targetItemNames(items); !slicesEqual(got, want) {
+		t.Fatalf("discoverTargetSkills order = %v, want %v", got, want)
+	}
+}
+
+func TestDiscoverTargetSkills_MissingDirIsNotError(t *testing.T) {
+	dstRoot := t.TempDir()
+
+	items, err := discoverTargetSkills(dstRoot)
+	if err != nil {
+		t.Fatalf("discoverTargetSkills: %v", err)
+	}
+	if items != nil {
+		t.Fatalf("discoverTargetSkills = %v, want nil", items)
+	}
+}
+
+func TestDiscoverTargetSkills_PathAndKind(t *testing.T) {
+	dstRoot := t.TempDir()
+
+	mustWriteFile(t, filepath.Join(dstRoot, "skills", "research", "SKILL.md"), "research skill")
+
+	items, err := discoverTargetSkills(dstRoot)
+	if err != nil {
+		t.Fatalf("discoverTargetSkills: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("discoverTargetSkills returned %d items, want 1", len(items))
+	}
+	item := items[0]
+
+	wantPath := filepath.Join(dstRoot, "skills", "research")
+	if item.Path != wantPath {
+		t.Errorf("Path = %q, want %q", item.Path, wantPath)
+	}
+	if item.Kind != KindSkill {
+		t.Errorf("Kind = %v, want KindSkill", item.Kind)
+	}
+	if item.InSource {
+		t.Errorf("InSource = true, want false (only the planner fills it in)")
+	}
+}

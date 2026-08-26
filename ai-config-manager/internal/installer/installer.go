@@ -93,7 +93,7 @@ func Plan(opts Options) (Result, error) {
 	// else. Discovery stays a pure "what does the source ship" pass with no
 	// opinion about what the caller wants; the comparison loops below only
 	// ever see items the caller actually asked for, so an item excluded by
-	// OnlyAgents/OnlySkills/Filter can never make the run fail on a
+	// OnlyAgents/OnlySkills/Install can never make the run fail on a
 	// comparison error it was never going to be reported for anyway.
 	if opts.OnlyAgents {
 		skills = nil
@@ -101,22 +101,16 @@ func Plan(opts Options) (Result, error) {
 	if opts.OnlySkills {
 		agents = nil
 	}
-	if opts.Filter != "" {
-		agents = filterItems(agents, opts.Filter)
-		skills = filterItems(skills, opts.Filter)
-		if len(agents)+len(skills) == 0 {
-			// A filter is an exact name match, so matching nothing almost
-			// always means the caller mistyped it. Returning an empty Result
-			// here would print "0 updated, 0 unchanged", which looks exactly
-			// like a successful no-op run instead of the typo it probably is
-			// — so this is fatal, not silently empty.
-			kindWord := "agents or skills"
-			if opts.OnlyAgents {
-				kindWord = "agents"
-			} else if opts.OnlySkills {
-				kindWord = "skills"
-			}
-			return Result{}, fmt.Errorf("--filter %q matched no %s", opts.Filter, kindWord)
+	if len(opts.Install) > 0 {
+		var missing []string
+		agents, skills, missing = selectInstall(agents, skills, opts.Install)
+		if len(missing) > 0 {
+			// An exact name match, so matching nothing almost always means the
+			// caller mistyped it. Returning an empty Result here would print
+			// "0 updated, 0 unchanged", which looks exactly like a successful
+			// no-op run instead of the typo it probably is.
+			return Result{}, fmt.Errorf("--install: no such %s in the source: %s",
+				kindWord(opts), quoteList(missing))
 		}
 	}
 
@@ -154,6 +148,107 @@ func Plan(opts Options) (Result, error) {
 	}
 
 	return Result{Agents: agents, Skills: skills}, nil
+}
+
+// PlanTarget scans the target and reports what is there to remove. It
+// requires only Options.Target: removal is target-driven, so there is no
+// source to validate, no containment check to make, and no comparison to
+// run. It touches nothing on disk that mutates it, which is what makes
+// --dry-run trustworthy for removal the same way it is for install, and
+// what makes "verify every name before deleting anything" structural
+// rather than a rule someone has to remember.
+func PlanTarget(opts Options) (TargetResult, error) {
+	if opts.Target == "" {
+		return TargetResult{}, fmt.Errorf("installer: Options.Target is empty, no target directory given")
+	}
+
+	// resolveTarget is reused unchanged: it already copes with a target that
+	// does not exist yet, which for a removal run simply means there is
+	// nothing to remove.
+	dstResolved, err := resolveTarget(opts.Target)
+	if err != nil {
+		return TargetResult{}, fmt.Errorf("resolve target %q: %w", opts.Target, err)
+	}
+
+	agents, err := discoverTargetAgents(dstResolved)
+	if err != nil {
+		return TargetResult{}, fmt.Errorf("discover target agents: %w", err)
+	}
+	skills, err := discoverTargetSkills(dstResolved)
+	if err != nil {
+		return TargetResult{}, fmt.Errorf("discover target skills: %w", err)
+	}
+
+	// Deliberately NOT mirrored from Plan: Plan errors when the source ships
+	// neither agents/ nor skills/, because that is almost certainly the wrong
+	// directory. A target with neither is just a fresh target with nothing to
+	// remove, which is not an error.
+
+	if opts.OnlyAgents {
+		skills = nil
+	}
+	if opts.OnlySkills {
+		agents = nil
+	}
+
+	if len(opts.Uninstall) > 0 {
+		var missing []string
+		agents, skills, missing = selectUninstall(agents, skills, opts.Uninstall)
+		if len(missing) > 0 {
+			// Every name is verified before anything is deleted: a typo in the
+			// third name must never leave the first two already gone. This is
+			// the check that guarantees it — PlanTarget writes nothing, and the
+			// caller only reaches removal if this returns cleanly.
+			return TargetResult{}, fmt.Errorf(
+				"--uninstall: no such %s in the target: %s (nothing was removed)",
+				kindWord(opts), quoteList(missing))
+		}
+	}
+
+	return TargetResult{Agents: agents, Skills: skills}, nil
+}
+
+// PlanInteractive plans both sides for the -i picker and cross-references
+// them, so each TargetItem knows whether the source also ships it. It is
+// the only caller that needs both, which is why the two halves stay
+// separate entry points with one precondition each.
+func PlanInteractive(opts Options) (Result, TargetResult, error) {
+	// Plan first: it does the full source validation, and -i still
+	// requires -s.
+	res, err := Plan(opts)
+	if err != nil {
+		return Result{}, TargetResult{}, err
+	}
+	// opts.Uninstall is always empty under -i, so PlanTarget lists the
+	// whole target rather than narrowing to named items.
+	tgt, err := PlanTarget(opts)
+	if err != nil {
+		return Result{}, TargetResult{}, err
+	}
+	markInSource(&tgt, res)
+	return res, tgt, nil
+}
+
+// markInSource sets InSource on every TargetItem that the source also
+// ships, matched on Kind and Name. Both sides use the same naming
+// convention ("scout.md", "research"), so this is a plain equality on the
+// pair — and it is per-kind, so an agent named "research.md" and a skill
+// named "research" never mark each other.
+func markInSource(tgt *TargetResult, res Result) {
+	src := make(map[nameKey]bool, len(res.Agents)+len(res.Skills))
+	for _, it := range res.Agents {
+		src[nameKey{it.Kind, it.Name}] = true
+	}
+	for _, it := range res.Skills {
+		src[nameKey{it.Kind, it.Name}] = true
+	}
+
+	for i := range tgt.Agents {
+		tgt.Agents[i].InSource = src[nameKey{KindAgent, tgt.Agents[i].Name}]
+	}
+	for i := range tgt.Skills {
+		tgt.Skills[i].InSource = src[nameKey{KindSkill, tgt.Skills[i].Name}]
+	}
 }
 
 // resolveTarget turns path into a clean, absolute, symlink-resolved path,
@@ -268,6 +363,67 @@ func Apply(res Result) error {
 	return nil
 }
 
+// RemoveItem deletes a single target item. Remove loops over it, and the
+// interactive mode calls it one item at a time so it can record an outcome
+// for each one instead of stopping at the first failure — the same division
+// of labour as ApplyItem and Apply.
+func RemoveItem(item TargetItem) error {
+	switch item.Kind {
+	case KindAgent:
+		// os.Remove, not RemoveAll: an agent is a single file, and if
+		// something unexpected is sitting at that path we want the error,
+		// not a recursive delete.
+		if err := os.Remove(item.Path); err != nil {
+			return fmt.Errorf("remove agent %q: %w", item.Name, err)
+		}
+	case KindSkill:
+		// os.RemoveAll, and it must be: a skill directory is not empty, so
+		// os.Remove would always fail on it. This is what deletes files
+		// inside the skill that this tool never installed — a skill is one
+		// unit, exactly as install already treats it.
+		//
+		// RemoveAll does not follow symlinks, so a skills/ entry that is a
+		// symlink to a directory elsewhere loses the link and keeps whatever
+		// it pointed at.
+		//
+		// One consequence, accepted rather than worked around: RemoveAll
+		// returns nil for a path that is already gone, so a skill directory
+		// deleted underneath us mid-run is reported "removed" rather than
+		// "failed", where an agent in the same situation would be reported
+		// "failed". A pre-Lstat guard would only narrow that window, not
+		// close it, and the end state matches what the user asked for either
+		// way.
+		if err := os.RemoveAll(item.Path); err != nil {
+			return fmt.Errorf("remove skill %q: %w", item.Name, err)
+		}
+	default:
+		return fmt.Errorf("remove %q: unknown item kind %v", item.Name, item.Kind)
+	}
+	return nil
+}
+
+// Remove deletes every item res describes.
+//
+// Like Apply, it aborts on the first error rather than pressing on: a
+// removal failure is almost always something structural like a permissions
+// problem, which the next item is not going to fix either. And unlike the
+// name verification in PlanTarget, this is past the point of no return —
+// the guarantee is "verify every name before deleting anything", not
+// "delete all or nothing".
+func Remove(res TargetResult) error {
+	for _, item := range res.Agents {
+		if err := RemoveItem(item); err != nil {
+			return err
+		}
+	}
+	for _, item := range res.Skills {
+		if err := RemoveItem(item); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Run plans and, unless opts.DryRun is set, applies an installation. It
 // never prints anything itself: the caller (main) is responsible for
 // rendering the returned Result, so that Run stays testable as a pure
@@ -282,6 +438,28 @@ func Run(opts Options) (Result, error) {
 		if err := Apply(res); err != nil {
 			// res is still returned here (not Result{}): even on a partial
 			// failure, the caller can render what was planned so the user
+			// can see how far the run got.
+			return res, err
+		}
+	}
+
+	return res, nil
+}
+
+// RunUninstall plans and, unless opts.DryRun is set, performs a removal. It
+// never prints anything itself: the caller (main) renders the returned
+// TargetResult, so this stays testable as a pure function of Options in,
+// (TargetResult, error) out.
+func RunUninstall(opts Options) (TargetResult, error) {
+	res, err := PlanTarget(opts)
+	if err != nil {
+		return TargetResult{}, err
+	}
+
+	if !opts.DryRun {
+		if err := Remove(res); err != nil {
+			// res is still returned (not TargetResult{}): even on a partial
+			// failure the caller can render what was planned, so the user
 			// can see how far the run got.
 			return res, err
 		}
