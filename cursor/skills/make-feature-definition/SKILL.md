@@ -1,7 +1,7 @@
 ---
 name: make-feature-definition
-description: Used when user requests interactive session for creating feature definition
-disable-model-invocation: true
+description: Run an interactive question-and-answer session that produces a high-level feature definition - what is being built, not how - and writes it to ./.tasks/{taskName}/feature-design.md. Use when the user wants to define, scope, or align on a new feature, change, or refactor before any implementation work is planned.
+disable-model-invocation: false
 ---
 
 # Make feature definition in interactive session

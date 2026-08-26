@@ -2,7 +2,7 @@
 name: make-implementation-spec
 description: Used when user requests interactive session for creating implementation spec from a feature definition
 argument-hint: [path-to-feature-definition]
-disable-model-invocation: true
+disable-model-invocation: false
 ---
 
 # Make implementation spec in interactive session

@@ -2,7 +2,7 @@
 name: make-feature-definition
 description: Used when user requests interactive session for creating feature definition
 argument-hint: [what is being built]
-disable-model-invocation: true
+disable-model-invocation: false
 ---
 
 # Make feature definition in interactive session

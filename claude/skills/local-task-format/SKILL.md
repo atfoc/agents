@@ -1,7 +1,7 @@
 ---
 name: local-task-format
 description: Documents the local folder task format and the operations for managing tasks in it
-disable-model-invocation: true
+disable-model-invocation: false
 ---
 
 # Local task format

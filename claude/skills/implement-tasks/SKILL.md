@@ -1,7 +1,7 @@
 ---
 name: implement-tasks
 description: Used when we need to implement existing tasks. Requires task operations in context, provided by the skill that invokes it
-disable-model-invocation: true
+disable-model-invocation: false
 ---
 
 # Implement tasks

@@ -1,7 +1,7 @@
 ---
 name: spec-to-tasks
-description: Used when we need to split implementation spec into tasks. Requires a task format in context, provided by the skill that invokes it
-disable-model-invocation: true
+description: Split an implementation spec into vertical slices and create one task per slice, with blockers wired between them. Use when the user has an implementation spec and wants it broken down into tasks to implement. Requires a task format already in context, provided by the skill that invokes it.
+disable-model-invocation: false
 ---
 
 # Split an implementation spec into tasks

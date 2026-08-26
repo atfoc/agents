@@ -1,7 +1,7 @@
 ---
 name: implement-tasks
-description: Used when we need to implement existing tasks. Requires task operations in context, provided by the skill that invokes it
-disable-model-invocation: true
+description: Work through an existing set of tasks — spawn one implementer per startable task, mark them completed, and keep going until nothing is left. Use when the user says to implement, build out, or run the tasks that have already been written, from a skill that has put the task format's operations in context.
+disable-model-invocation: false
 ---
 
 # Implement tasks

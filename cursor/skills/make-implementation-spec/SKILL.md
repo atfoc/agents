@@ -1,7 +1,7 @@
 ---
 name: make-implementation-spec
-description: Used when user requests interactive session for creating implementation spec from a feature definition
-disable-model-invocation: true
+description: Run an interactive question-and-answer session that turns a feature definition into a fully detailed implementation spec, then write it to implementation-spec.md. Use when the user has a feature definition and wants an implementation spec, or wants to work out how a feature will actually be built before any code is written.
+disable-model-invocation: false
 ---
 
 # Make implementation spec in interactive session

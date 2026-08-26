@@ -1,7 +1,7 @@
 ---
 name: local-task-format
-description: Documents the local folder task format and the operations for managing tasks in it
-disable-model-invocation: true
+description: Explains the local folder task format — one markdown file per task — and the scripts/tasks.py commands that create, list, block and complete those tasks. Use whenever tasks are being created, listed, started or completed in a local task folder, or before anything reads or writes a file in one.
+disable-model-invocation: false
 ---
 
 # Local task format
@@ -70,5 +70,6 @@ Read the task body by running: python3 scripts/tasks.py body --root <root> --id 
 Every command prints one line to stderr and exits non-zero on failure. Never work around an error.
 Never fall back to reading or writing the folder directly. Report it and stop.
 
-This skill writes nothing and produces no output of its own. It is finished once the format and
-its operations are in context; hand back to the skill that invoked it and stop.
+There is no deliverable of its own here: the skill is done as soon as the format and its commands
+are loaded, or as soon as the requested command has run and its output has been passed on. Return
+to whatever invoked it and stop.

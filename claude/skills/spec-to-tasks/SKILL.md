@@ -2,7 +2,7 @@
 name: spec-to-tasks
 description: Used when we need to split implementation spec into tasks. Requires a task format in context, provided by the skill that invokes it
 argument-hint: [path-to-implementation-spec]
-disable-model-invocation: true
+disable-model-invocation: false
 ---
 
 # Split an implementation spec into tasks
