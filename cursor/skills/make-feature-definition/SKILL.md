@@ -1,10 +1,13 @@
 ---
 name: make-feature-definition
-description: Run an interactive question-and-answer session that produces a high-level feature definition - what is being built, not how - and writes it to ./.tasks/{taskName}/feature-design.md. Use when the user wants to define, scope, or align on a new feature, change, or refactor before any implementation work is planned.
+description: Run an interactive question-and-answer session that settles what a feature is - scope, reason, goal, and impact on the existing project - and writes the agreed feature definition to ./.tasks/{taskName}/feature-design.md. Use when the user wants to define, scope, or agree on a new feature, change, or refactor before anything about the implementation is decided.
 disable-model-invocation: false
 ---
 
 # Make feature definition in interactive session
+
+The subject is whatever the user gave you: the skill argument, a description written in this conversation, or a feature they pointed at. If there is no subject, ask what is being built and wait for the answer before going further.
+
 Your goal is to provide user with interactive session. The output of this session is feature definition.
 Every question you ask here is about what is being built, never about how it will be implemented.
 
@@ -28,7 +31,7 @@ charge to cover all cases. If you imagine feature design as graph and we are at 
 When asking a questions always provide one recommendation for anwser. Besides design questions about what we are building it is important for us to cover how does this feature impact existing project.
 We need to discuss about how it changes, adds or removes things from project. Now we are talking about functionality not yet going into implementatino details. Make sure you raise any conflicts 
 or problems that this new feature could impact our current project. You can recommend when to stop but it is my decsision do we keep going or we are moving to next step.
-When we are finished first write out the whole feature design so that we can one more time check are we in sync.
+When we are finished do not write the whole feature definition back to me in the conversation. Just ask me is that all and do I want you to write it to file.
 
 ## More on asking questions
 When asking questions follow some natural order do not jump from topic to topic. We start with one topic and we drill down before we change the topic.

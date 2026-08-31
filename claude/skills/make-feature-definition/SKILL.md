@@ -29,7 +29,7 @@ charge to cover all cases. If you imagine feature design as graph and we are at 
 When asking a questions always provide one recommendation for anwser. Besides design questions about what we are building it is important for us to cover how does this feature impact existing project.
 We need to discuss about how it changes, adds or removes things from project. Now we are talking about functionality not yet going into implementatino details. Make sure you raise any conflicts 
 or problems that this new feature could impact our current project. You can recommend when to stop but it is my decsision do we keep going or we are moving to next step.
-When we are finished first write out the whole feature design so that we can one more time check are we in sync.
+When we are finished do not write the whole feature definition back to me in the conversation. Just ask me is that all and do I want you to write it to file.
 
 ## More on asking questions
 When asking questions follow some natural order do not jump from topic to topic. We start with one topic and we drill down before we change the topic.

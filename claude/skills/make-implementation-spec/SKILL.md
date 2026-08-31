@@ -27,7 +27,7 @@ we need to build shared understanding of the whole implementation. Here besids a
 what and how is beeing added, removed or changed in code base. You will same as in feature design ask me a question and provide one recommendation. Same as in feature design you can recommend when to end
 but it is my call we do not continue until I say so. 
 
-When we are done before we continue you will write the full implementation spec back to me so we can one more time check are we in sync.
+When we are done do not write the full implementation spec back to me in the conversation. Just ask me is that all and do I want you to write it to file.
 
 ## More on asking questions
 When asking questions follow some natural order do not jump from topic to topic. We start with one topic and we drill down before we change the topic.
