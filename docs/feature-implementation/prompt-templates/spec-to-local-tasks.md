@@ -1,0 +1,1 @@
+I want you to take a one subagent in it I want you to split spec from {specPath} into vertical slces. Then in second subagent create one task for each slice using local tasks format in dir tasks in  the same dir where spec is located
