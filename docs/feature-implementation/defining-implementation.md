@@ -33,4 +33,4 @@ point is shared understanding of the whole implementation.
 ## Stop
 
 After `implementation-spec.md` is written, report the path and stop. Do not split the spec into
-tasks and do not implement it — see `split-spec-to-tasks.md`.
+tasks and do not implement it — see `split-spec-into-vertical-slices.md`.

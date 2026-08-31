@@ -4,8 +4,8 @@ The pipeline from an idea to shipped code: define the feature, specify the imple
 into tasks, implement them. Each step is its own document and each produces one artifact the next
 step consumes.
 
-Order: `defining-feature.md` → `defining-implementation.md` → `split-spec-to-tasks.md` →
-`implementing-tasks.md`.
+Order: `defining-feature.md` → `defining-implementation.md` → `split-spec-into-vertical-slices.md`
+→ `implementing-tasks.md`.
 
 ## Docs
 
@@ -13,15 +13,12 @@ Order: `defining-feature.md` → `defining-implementation.md` → `split-spec-to
   `feature-design.md`.
 - `defining-implementation.md` — turning a feature definition into a detailed implementation spec.
   Output is `implementation-spec.md`.
-- `split-spec-to-tasks.md` — cutting an implementation spec into the slices that become tasks: how
-  to cut, how to write each body, how to decide blockers.
+- `split-spec-into-vertical-slices.md` — cutting an implementation spec into the slices that become
+  tasks: how to cut, how to write each body, how to decide blockers.
+- `spec-to-task-dual-agent-workflow.md` — running the split and the task creation as two agents,
+  one cutting and one transcribing, with the handoff file between them. The task store is whatever
+  the user requested — it is never defaulted or invented; open this when the spec is to become
+  tasks in a store the user named.
 - `implementing-tasks.md` — the loop that takes a store of tasks to done: fetch what is startable,
   spawn one implementer subagent per task, complete, repeat. Also the implementer's prompt and how
   a task body reaches it.
-
-## Helper directories
-
-- `prompt-templates/` — prompt templates for running steps of this pipeline. Paste one into a
-  prompt and fill its placeholders; do not read them for information.
-  - `spec-to-local-tasks.md` — split a spec into vertical slices in one subagent, then create one
-    local task per slice in a second subagent.
