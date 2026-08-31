@@ -7,9 +7,9 @@ disable-model-invocation: false
 # Local task format
 
 Tasks live as markdown files inside one root folder. Every read and every write of a task goes
-through `scripts/tasks.py` — never through your own file reads or edits. The skill that invokes
-this one must supply the root folder; if it did not, report that the root folder is missing and
-stop.
+through `scripts/tasks.py` — never through your own file reads or edits. Whoever uses this
+format supplies the root folder; if you do not have one, report that the root folder is missing
+and stop.
 
 ## The format
 
@@ -43,7 +43,15 @@ in its `blockedBy` is completed.
 
 ## Operations
 
-`SCRIPT` below stands for `python3 ${CLAUDE_SKILL_DIR}/scripts/tasks.py`.
+`SCRIPT` below stands for `python3 <this skill's directory>/scripts/tasks.py`, with this skill's
+directory written out as a literal absolute path. Resolve it once, before you run anything: it is
+the base directory this skill was loaded from. If you do not have that, find it:
+
+    find ~/.claude/skills .claude/skills -path '*local-task-format*' -name tasks.py 2>/dev/null | head -1
+
+Every command below uses that literal path, and so does any command you hand to someone else to
+run. No variables, nothing relative to a working directory — the shell that runs it is not
+necessarily yours.
 
 | Capability | Command |
 | :-- | :-- |
@@ -56,14 +64,10 @@ in its `blockedBy` is completed.
 | Startable tasks | `SCRIPT list-unblocked --root <root>` |
 | Complete a task | `SCRIPT complete --root <root> --id <id>` |
 | Block an existing task | `SCRIPT block --root <root> --id <id> --blocked-by <id> …` |
-| Fetch a task's body | the literal block below |
+| Fetch a task's body | `SCRIPT body --root <root> --id <id>` — prints the body alone, no frontmatter |
 
-Copy the block below verbatim into an implementer's prompt, substituting `<root>` and `<id>` and
-changing nothing else:
-
-```
-Read the task body by running: python3 ${CLAUDE_SKILL_DIR}/scripts/tasks.py body --root <root> --id <id>
-```
+`body` prints the body and nothing else — no id, title, blockers or status — so it can be given to
+someone who must see only the body.
 
 ## Errors
 

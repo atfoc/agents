@@ -1,74 +1,111 @@
 ---
 name: implement-tasks
-description: Used when we need to implement existing tasks. Requires task operations in context, provided by the skill that invokes it
-disable-model-invocation: false
+description: Used when we need to implement existing tasks. You say where the tasks live and which skill or doc describes that storage
+argument-hint: [where-the-tasks-live]
+disable-model-invocation: true
 ---
 
 # Implement tasks
 
-This skill has no input of its own. The tasks come from the task format that is already in
-context. This skill contains no knowledge of how tasks are stored — no files, no folders, no
-frontmatter, no id schemes. Everything it does to a task, it does through the operations that
-format gives it.
+You drive the task store yourself for the whole run, through the format the user's input names.
+Implementers see one task body and nothing else — never the spec, never another task, never a
+reason why.
 
-## Step 1 — Check you can run
+## Step 1 — Take the storage input
 
-The context must already give you all five of these:
+Your one input is the user's own statement of where the tasks live and what describes that format
+— a folder plus "use the `local-task-format` skill", a Linear project plus the skill or doc that
+covers Linear, anything of that shape. Take it from the skill argument or from the conversation.
 
-- how to list the tasks that are startable now,
-- how to mark a task completed,
-- how an implementer fetches a task's full body, as a literal instruction you can hand over
-  unchanged,
-- how to create a new task,
-- how to make an existing task blocked by another.
+Check only that it is *present*. If it is missing, ask for it and stop. Never default to a folder,
+never go looking for something task-shaped, never invent a store.
 
-Plus any further input those operations declare (a root folder, a project id, whatever the format
-asks for), with a value for each.
+Load whatever skill or doc it names and follow it. Every read and every write of a task for the
+rest of this run goes through that format's own operations — never your own file reads or edits.
 
-If any of the five is missing, or a declared input has no value, stop, report exactly which one is
-missing, and spawn nothing.
+Pre-validate nothing else. Do not check the location exists, do not check the format offers the
+operations you are going to need, do not count its capabilities. A wrong or insufficient input
+surfaces as a hard error from the first real operation; when it does, stop, report that error
+exactly as it came, and never work around it.
 
-## Step 2 — Fetch the startable tasks
+## Step 2 — Work out how an implementer fetches a body
 
-Ask the context's operations for the tasks that are startable now. That list is authoritative.
-Never reason about blocking yourself, never re-derive what is startable, never inspect the store.
+An implementer receives the task's body and nothing else. You never paste a body into a prompt —
+you hand over a command the implementer runs itself.
 
-## Step 3 — Spawn one subagent per startable task
+From the format you loaded, take the command that prints **only** a task's body for a given task
+id, substituting the values that format declares — the task id, plus a root folder, a project id,
+whatever else it asks for — and changing nothing else about it.
 
-Spawn one subagent for every startable task, all of them in parallel, in a single message. There
-is no cap — the split already decided what may run together.
+The command you hand over must be literal: absolute paths, no variables, nothing relative to your
+working directory. The implementer's shell is not yours.
 
-The prompt is **built, not templated**. Take the fetch-body instruction from the context,
-substitute the values it declares — always the task id, plus whatever else that format needs — and
-copy it into the prompt verbatim. Add nothing about what the task contains: never summarise, quote
-or preview a body.
+If the format only offers whole-task retrieval — a command that also prints the id, title,
+blockers, status or any other field — write one small adapter for this run:
 
-Then append the standing rules for the implementer:
+    ADAPTER="$(mktemp "${TMPDIR:-/tmp}/task-body-XXXXXX.sh")"
 
-- implement the task fully, including its verification,
-- do no other task's work,
-- never modify the task store and never mark anything completed,
-- on a conflict, a gap, or anything the task does not cover, stop and report it rather than
-  resolving it,
-- report back what was done.
+It takes a task id as its one argument, calls the format's own retrieval, and prints the body
+alone. It calls the format's operations; it never reads or parses the store itself. What you hand
+implementers is then `sh "<adapter path>" <task id>`.
 
-Record which task ids are in flight. A running task is still pending and still startable, so every
-later fetch returns it; without that ledger the same task gets spawned again on the next
-completion.
+The adapter is never cleaned up and its path is never reported to the user.
 
-## Step 4 — On each report
+If no command an implementer could run reaches a body at all, stop, report that this format cannot
+be driven this way, and spawn nothing.
 
-On success: mark that task completed, fetch the startable list again, and immediately spawn
-anything newly startable without waiting for in-flight work to finish. The only two things that
-change what is startable are the initial fetch and a completion.
+## Step 3 — Fetch the startable tasks
+
+Ask the format's operations for the tasks that are startable now. That list is authoritative.
+Never reason about blocking yourself, never re-derive what is startable, never inspect the store
+by hand.
+
+## Step 4 — Spawn one subagent per startable task
+
+Spawn one subagent for every startable task that is not already in flight, all of them in
+parallel, in a single message. There is no cap — the split already decided what may run together.
+
+Build each prompt: take the body command from Step 2, substitute that task's id, and put it in as
+the literal command. Add nothing about what the task contains — never summarise, quote or preview
+a body, never name the implementation spec or the feature definition, never mention that other
+tasks exist, and never explain why this task was picked now.
+
+The prompt is exactly this, with `<BODY COMMAND>` replaced:
+
+```
+Read your task by running:
+
+    <BODY COMMAND>
+
+That is your whole assignment.
+
+- Implement it fully, including its verification.
+- Do no other task's work.
+- Never modify the task store and never mark anything completed.
+- On a conflict, a gap, or anything the task does not cover, stop and report it rather than
+  resolving it.
+- Report back what was done.
+```
+
+Record the ids you just spawned in the in-flight ledger. A running task is still pending and still
+startable, so every later fetch returns it; without that ledger the same task gets spawned again
+on the next completion.
+
+## Step 5 — On each report
+
+On success: mark that task completed through the format's operations, drop it from the in-flight
+ledger, fetch the startable list again, and immediately spawn anything newly startable without
+waiting for in-flight work to finish. The only two things that change what is startable are the
+initial fetch and a completion.
 
 Run no verification of your own — the implementer runs the task's verification. A reported
 verification failure means the task is **not** completed.
 
-## Step 5 — Turn problems into tasks
+## Step 6 — Turn problems into tasks
 
-A one-or-two-line fix may be applied inline. Anything larger becomes a new task, with the affected
-existing tasks blocked by it.
+A one-or-two-line fix may be applied inline. Anything larger becomes a new task, created through
+the format's operations, with the affected existing tasks blocked by it through the format's
+operations.
 
 A task whose implementer failed is blocked by its own remediation task, so it leaves the startable
 set honestly instead of being respawned in a loop. If the remediation cannot be expressed as a
@@ -80,7 +117,7 @@ keeps spawning whatever is startable.
 The only writes this skill makes are: create a task, block a task, complete a task, and at most a
 two-line code edit.
 
-## Step 6 — Stop
+## Step 7 — Stop
 
 Nothing pending → report what was done, one line per completed task, plus everything that was
 reported and not resolved.
