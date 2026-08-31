@@ -7,9 +7,9 @@ disable-model-invocation: false
 # Local task format
 
 Tasks live as markdown files inside one root folder. Every read and every write of a task goes
-through `scripts/tasks.py` — never through your own file reads or edits. Whoever uses this
-format supplies the root folder; if you do not have one, report that the root folder is missing
-and stop.
+through `scripts/tasks.py` — never through your own file reads or edits.
+Whoever uses this format supplies the root folder; if you do not have one, report that the root
+folder is missing and stop.
 
 ## The format
 
