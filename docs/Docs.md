@@ -13,7 +13,7 @@ parent, used only when a doc points at it.
 - `vertical-slices.md` — what a vertical slice is: its verification, its body, its blockers, and
   what holds across the whole set.
 - `researching.md` — answering an open question from evidence, in rounds.
-- `explaining-code.md` — explaining code at the abstraction level the user asked for.
+- `explaining-code.md` — explaining code at the abstraction level the user asked for. Use when user asks questions about codebase.
 
 ## Directories
 
