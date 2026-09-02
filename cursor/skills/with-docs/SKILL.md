@@ -10,67 +10,67 @@ The task is whatever the user pointed at: the skill argument, or the request ear
 conversation.
 If there is no task, ask what to do and stop.
 
-Docs are a source of information, not a procedure bound to this skill. You search them, build the
-context this task needs, and then do the task. Nothing here tells you which doc to open — that is
-what the indexes are for.
+Docs are a source of information, not a procedure. Search them until the task is fully specified,
+then do the task. Nothing here says which doc to open — that is what the indexes are for.
 
-## Step 1 — Name what is missing
-
-Before reading anything, write down the specific questions this task cannot be completed without:
-the formats, conventions, procedures, standards, exact commands it depends on.
-
-Each question must be specific enough that you would recognise its answer when you saw it. "How do
-tasks work" is not a question. "What command creates a task in this store, and what does it print"
-is.
-
-If the task needs nothing you do not already have, say so and go to Step 6.
-
-## Step 2 — Find the docs roots
+## Where the docs are
 
 - **User docs** — the `AI_DOCS` environment variable: a `:`-separated string of paths. Every path
   in it is a docs root.
-- **Project docs** — under the working directory, every folder holding a `Docs.md`:
+- **Project docs** — under the working directory, every folder holding a `DOCS.md`:
 
-      find . -name Docs.md -not -path '*/.git/*' 2>/dev/null
+      find . -name DOCS.md -not -path '*/.git/*' 2>/dev/null
 
-  The shallowest match on a branch is a root. Deeper ones are reached through their parent's index,
-  not directly.
+  The shallowest match on a branch is a root. Deeper ones are reached through their parent's index.
 
-If there are no roots at all, say so and go to Step 5.
+**A directory with no `DOCS.md` holds no docs.** It is a helper for its parent — scripts, templates,
+assets. Never search it for information; use its files only when a doc points you at them.
 
-## Step 3 — Navigate by index
+## How to search
 
-Read each root's `Docs.md` first. It is the index: what that directory holds and where. It routes;
-it does not carry the content.
+1. Read each root's `DOCS.md` first. It is the index: what that directory holds and where. It
+   routes; it does not carry the content. Entries may add a `Use when ...` trigger naming the
+   situation they are for — match it against yours.
+2. Open only the entries that answer a question you actually have. Do not read a directory
+   exhaustively. Descend into a subdirectory only through its own `DOCS.md`.
+3. **Fallback** — for what the indexes do not answer, text-search the roots:
 
-- Open only the entries that answer one of your questions. Do not read a directory's docs
-  exhaustively.
-- Descend into a subdirectory only through its own `Docs.md`.
-- **A directory with no `Docs.md` holds no docs.** It is a helper for its parent — scripts,
-  templates, assets. Never search it for information and never descend into it looking for docs.
-  Run or use its files only when a doc points you at them.
-- Follow links between docs. A doc that says "see `x.md`" is naming something you need.
-- Stop as soon as every question is answered.
+       grep -ril "<term>" <root>
 
-## Step 4 — Fall back to text search
+   Read the hits that look relevant, subject to the same helper-directory rule.
 
-Only for the questions the indexes did not answer. Search the roots for the terms in those
-questions:
+## Search in a loop
 
-    grep -ril "<term>" <root>
+One pass is rarely enough. After each read, ask what it introduced that you still cannot act on,
+and search for that. Repeat until nothing is left unresolved.
 
-Read the hits that look relevant, subject to the same rule: a file inside a directory with no
-`Docs.md` is a helper, not a doc.
+Search again when:
 
-## Step 5 — Report what is still missing
+- **A doc references another doc.** Read it.
+- **A doc names a concept it does not define.** Search the docs for that concept before continuing.
+  A doc that says "create a local task" without saying how has just raised a new question — what
+  local tasks are, and what command creates one. Search for it; do not assume.
+- **An answer is partial or conditional.** Resolve the condition.
 
-If any question is still open, list those questions and ask the user to supply the answers, then
+Stop only when you could carry out the task with no remaining guesses.
+
+## Conflicting information
+
+When sources disagree, the higher one wins:
+
+1. Facts stated in the prompt
+2. Facts stated in project docs
+3. Facts stated in `AI_DOCS`
+
+## What the docs could not answer
+
+If a question is still open after the loop, list those questions, ask the user to answer them, and
 stop until they do.
 
 Never guess a convention the docs were supposed to provide, never silently substitute your own
 default, and never report a task as done on information you invented.
 
-## Step 6 — Do the task
+## Do the task
 
 Complete it using what you resolved. Where a doc decided something, say which doc — by path — so
 the user can check it.
