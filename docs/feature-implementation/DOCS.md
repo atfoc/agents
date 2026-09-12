@@ -20,7 +20,9 @@ Order: `defining-feature.md` → `defining-implementation.md` → `split-work-in
   piece of work has to become individual tasks.
 - `spec-to-task-dual-agent-workflow.md` — running the split and the task creation as two agents,
   one cutting and one transcribing. The task store is whatever the user requested — it is never
-  defaulted or invented. Use when a spec is to become tasks in a store the user named.
-- `implementing-tasks-workflow.md` — the loop that takes a store of tasks to done: fetch what is
-  startable, spawn one implementer subagent per task, complete, repeat. Also the implementer's
-  prompt and how a task body reaches it. Use when tasks exist and the work is to be implemented.
+  defaulted or invented — and every task created is tagged `for-agent`. Use when a spec is to
+  become tasks in a store the user named.
+- `implementing-tasks-workflow.md` — the loop that takes the `for-agent` tasks of a store to done:
+  fetch what is startable under that tag, spawn one implementer subagent per task, complete,
+  repeat. Also the implementer's prompt and how a task body reaches it. Use when tasks exist and
+  the work is to be implemented.

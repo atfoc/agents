@@ -9,10 +9,20 @@ never a task split across two. You run the loop and the store; the subagents wri
 Every read and every write of a task goes through the task store's own operations. Which store, and
 what those operations are, comes from whoever starts the run.
 
+The run works only the tasks tagged `for-agent` — the tag `spec-to-task-dual-agent-workflow.md`
+puts on everything it creates. Every other task in the store belongs to someone else: it is never
+fetched as work, spawned, or completed by this loop. It still blocks. A `for-agent` task blocked by
+an untagged task is not startable until whoever owns that task completes it, and nothing here
+hurries that along.
+
 ## The loop
 
-1. **Fetch the startable tasks** — the ones whose blockers are all completed. That list is
-   authoritative. Never reason about blocking yourself and never inspect the store by hand.
+1. **Fetch the startable tasks carrying `for-agent`** — the ones whose blockers are all completed,
+   narrowed by the store's own tag filter to that tag. That list is authoritative. Never reason
+   about blocking yourself and never inspect the store by hand. The store judges blocking against
+   every task it holds, tagged or not — the tag only decides which of the startable tasks are
+   yours. If the store's startable listing cannot filter by tag, fetch it whole and keep only the
+   entries that carry `for-agent`; never widen beyond them.
 2. **Spawn one implementer subagent per startable task** not already in flight, all of them in
    parallel, in a single message. There is no cap; the cut already decided what may run together.
 3. **Record the spawned ids in an in-flight ledger.** A running task is still pending and still
@@ -76,19 +86,22 @@ why this task was picked now.
 ## Problems
 
 - A one-or-two-line fix may be applied inline.
-- Anything larger becomes a new task, with the affected existing tasks blocked by it.
+- Anything larger becomes a new task, tagged `for-agent` like every task this loop creates so the
+  loop picks it up, with the affected existing tasks blocked by it.
 - A task whose implementer failed is blocked by its own remediation task, so it leaves the startable
   set honestly instead of being respawned in a loop. If the remediation cannot be expressed as a
   task, exclude that task for the rest of the run and report it.
 - Never edit a task's body. One failure never stops the run — in-flight work continues and the loop
   keeps spawning whatever is startable.
 
-The only writes this loop makes: create a task, block a task, complete a task, and at most a
-two-line code edit.
+The only writes this loop makes: create a task and tag it, block a task, complete a task, and at
+most a two-line code edit.
 
 ## Stop
 
-- **Nothing pending** — report what was done, one line per completed task, plus everything that was
-  reported and not resolved.
-- **Something pending, nothing startable, nothing in flight** — report the stall, naming the pending
-  tasks and what blocks them, and stop.
+- **Nothing pending with `for-agent`** — report what was done, one line per completed task, plus
+  everything that was reported and not resolved.
+- **Something pending with `for-agent`, nothing startable, nothing in flight** — report the stall,
+  naming the pending tasks and what blocks them. Where a blocker is a task without the tag, say so:
+  that task is someone else's, and the run picks up again once they complete it and the loop is
+  started anew. Then stop.
