@@ -21,11 +21,11 @@ parent, used only when a doc points at it.
 - `feature-implementation/` — the pipeline from an idea to shipped code: defining a feature,
   specifying the implementation, cutting it into tasks, implementing them. Use when building a
   feature end to end, or when doing any single step of that pipeline.
-- `dev-process/` — driving a goal from an idea to shipped code without the user deciding every
-  step: an orchestrator that plans the road to implementation as tasks, and the runners for the
-  agent tasks and the human tasks it creates. Use when the user has a goal to drive to done, when
-  finished tasks need the next step planned, or when running the tasks a planning iteration
-  created.
+- `dev-process/` — taking a vague, large chunk of work, understanding it, then breaking it into
+  efforts that fit feature definition, implementation definition, split, and implement: an
+  orchestrator that plans that road as tasks, and the runners for the agent tasks and the human
+  tasks it creates. Use when the user has a goal to drive to done, when finished tasks need the
+  next step planned, or when running the tasks a planning iteration created.
 - `local-tasks/` — the local folder task format and the commands that read and write it. Use when
   reading, creating or updating tasks in a local task folder.
 - `docs/` — this collection's own format and how an agent searches it. Use when writing a new doc,

@@ -1,8 +1,9 @@
 # Dev process orchestrator
 
 Drives a goal — what the user wants built — to shipped code without the user deciding at every
-step what comes next. It turns the road to implementation into tasks: research, feature and
-implementation definitions, prototypes, splitting into slices, implementing them. Agents run the
+step what comes next. The goal is often a vague, large chunk of work. Planning first produces the
+understanding that makes it definable, then breaks it into efforts small enough for the standard
+flow: feature definition, implementation definition, split into slices, implement. Agents run the
 tasks that need no person (`running-agent-tasks.md`); the user runs the rest
 (`running-human-tasks.md`); the orchestrator re-plans on what came back.
 
@@ -36,9 +37,21 @@ name.
 3. Read the outputs of the tasks that finished since the last iteration, from
    `./.tasks/{goalName}/task-outputs/{taskKey}/…`.
 4. Decide the next tasks on your own. The kinds are fixed — `task-kinds.md` — so the decision is
-   which kinds, with which titles, and which task blocks which. The blocker graph is the order;
-   whatever it does not order runs in parallel. Do not consult the user: these are not
-   implementation tasks, they are the steps that make implementation possible.
+   which kinds, with which titles, who runs each, and which task blocks which. The blocker graph
+   is the order; whatever it does not order runs in parallel. Do not consult the user: these are
+   not implementation tasks, they are the steps that make implementation possible. The end result
+   of each task is written into its body so the runner does not have to ask what done looks like.
+
+   The standard flow — feature definition, then implementation definition, then split tasks, then
+   implement tasks — is for one effort that is already understood. It is not the first move on a
+   goal that is still vague or too large to bound.
+
+   If the outputs in hand are not enough to name the efforts that fit that flow, create only
+   research and prototype tasks that would make them nameable. A prototype is `for-agent` when the
+   question is whether something works or can work; human when it is how something looks or feels.
+
+   Once an effort can be named and bounded, the tasks for it are that flow, in that order, each
+   blocked by the one before. Several efforts may be in flight; each has its own slice store.
 
    Plan only as far as the outputs in hand allow. A task whose result can change which tasks
    should exist after it, or in what order, is a planning boundary: create it and the tasks that
@@ -55,6 +68,7 @@ name.
 A task body is the whole assignment; whoever runs it reads nothing else. It carries:
 
 - the kind, and the doc that kind runs, named as `task-kinds.md` names it;
+- the end result — what done looks like — stated so the runner does not ask;
 - the goal context the task needs — no more;
 - its inputs as literal paths: the output locations of its blockers,
   `./.tasks/{goalName}/task-outputs/{blockerKey}/…`, which exist by the time the task is
@@ -64,7 +78,9 @@ A task body is the whole assignment; whoever runs it reads nothing else. It carr
 - for the kinds that create or work a store — split tasks, implement tasks — the store
   description verbatim, with the slice-store placement filled in for that flow.
 
-`for-agent` tasks are tagged so on creation; human tasks carry no tag.
+`for-agent` tasks are tagged so on creation; human tasks carry no tag. Prototype is either: tag it
+`for-agent` when the question is whether it works or can work; leave it untagged when the question
+is how it looks or feels.
 
 ## Two stores
 

@@ -1,8 +1,9 @@
 # Dev process
 
-Driving a goal from an idea to shipped code without the user deciding every step: an orchestrator
-that turns the road to implementation into tasks, a runner for the tasks agents do, and a runner
-for the tasks a person does.
+Taking a vague, large chunk of work, understanding it, then breaking it into efforts that each go
+through feature definition, implementation definition, split, and implement: an orchestrator that
+turns that road into tasks, a runner for the tasks agents do, and a runner for the tasks a person
+does.
 
 ## Docs
 
@@ -19,9 +20,10 @@ for the tasks a person does.
   foreground. Use when the user asks what tasks wait on them, or names one to work.
 - `dev-process-state.md` — the goal folder and the state file: where a goal's state, task outputs
   and store live, what the state file holds, and what a store description must say.
-- `task-kinds.md` — the six task kinds: their tag, the doc each runs, and what each outputs.
-- `prototyping.md` — answering a question of how something works or looks by growing variants in
-  a branch with the user. Use when a prototype task is run.
+- `task-kinds.md` — the six task kinds: who runs each, the doc each runs, and what each outputs.
+- `prototyping.md` — answering a question of whether something works or how it looks by building
+  in a branch: `for-agent` when the question is does-it-work, human when judgment is needed. Use
+  when a prototype task is run.
 
 ## Helper directories
 
