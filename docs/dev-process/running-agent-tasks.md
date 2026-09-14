@@ -16,8 +16,11 @@ subprocess per task not already in flight, all in parallel, keep an in-flight le
 task on its success report, fetch again. The body reaches the subprocess the same way: a command
 that prints only that task's body, worked out once before spawning anything. What differs:
 
-- Spawn each same-agent subprocess so that it can spawn same-agent subprocesses of its own. A split
-  task runs two subprocesses; an implement task runs one per slice.
+- A same-agent subprocess is a new top-level session, started through the script in `scripts/`
+  for the agent this session runs in — `run-claude-task.sh` under Claude Code,
+  `run-cursor-task.sh` under Cursor. Never spawn it as a subagent: a subagent cannot spawn
+  subagents of its own, and a split task runs two, an implement task one per slice. The rules for
+  a run are in `running-a-task-subprocess.md`.
 - Each same-agent subprocess is told to work through the `with-docs` skill, in addition to its
   task. The skill is named; no command is.
 - A same-agent subprocess that reports a problem still ends as a completed task. Its output must
