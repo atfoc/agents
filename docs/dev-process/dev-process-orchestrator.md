@@ -39,6 +39,13 @@ name.
    which kinds, with which titles, and which task blocks which. The blocker graph is the order;
    whatever it does not order runs in parallel. Do not consult the user: these are not
    implementation tasks, they are the steps that make implementation possible.
+
+   Plan only as far as the outputs in hand allow. A task whose result can change which tasks
+   should exist after it, or in what order, is a planning boundary: create it and the tasks that
+   do not depend on its result, and stop there. The tasks past the boundary are decided in a
+   later iteration, once its output has been read. Do not lay out the whole road in one
+   iteration — a task created ahead of a boundary is a guess, and a guess in the store is a task
+   that gets run.
 5. Choose a key for every task and create the tasks in blocker order, so that a blocked task's
    blockers already have ids when it is created.
 6. Rewrite the state file in full and report.
@@ -85,6 +92,8 @@ orchestrator stops; the user decides.
 
 - One line per task created this iteration: id, kind, title, `for-agent` or human, what blocks it.
 - Which of them are startable now.
+- The planning boundary, if the iteration stopped at one: which task's result the next round of
+  planning waits on.
 - After the first iteration: one line per task finished since last time, with what it concluded.
 - What to run next: `running-agent-tasks.md` for the `for-agent` tasks, and which human tasks wait
   on the user.
