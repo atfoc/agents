@@ -1,7 +1,6 @@
 ---
 name: with-docs
 description: Complete a task using the docs collections — resolve every convention, format, procedure and standard the task needs out of the docs before doing the work, and report anything the docs could not answer. Use when a task depends on documented knowledge rather than on the code in front of you.
-disable-model-invocation: true
 ---
 
 # Complete a task with the docs
