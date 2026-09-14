@@ -1,7 +1,7 @@
 # Running agent tasks
 
 One session that runs every startable `for-agent` task of a goal, one same-agent subprocess per
-task, until nothing `for-agent` is startable.
+task, until nothing `for-agent` is startable that this session has not already failed.
 
 Input: `{goalName}`. Read `./.tasks/{goalName}/dev-process.md` first — `dev-process-state.md` —
 and take the store description from it verbatim; every store operation uses it. No state file, or
@@ -23,9 +23,18 @@ that prints only that task's body, worked out once before spawning anything. Wha
   a run are in `running-a-task-subprocess.md`.
 - Each same-agent subprocess is told to work through the `with-docs` skill, in addition to its
   task. The skill is named; no command is.
-- A same-agent subprocess that reports a problem still ends as a completed task. Its output must
-  record the problem: if the subprocess did not write it, write the subprocess's report into that
-  task's output location, then complete the task.
+- Only a subprocess whose report says the task is done, with its output written, completes the
+  task. A subprocess that stops on a problem, exits without a report, or otherwise does not
+  finish its task has **failed** it, and the task stays uncompleted. Its report is still written:
+  if the subprocess did not write one, write what it reported — or that it exited without
+  reporting — into that task's output location. Then move the id from the in-flight ledger to a
+  failed set kept for the rest of this session. A failed task is still pending and still
+  startable, so without the failed set it is spawned again on the next fetch; a task is never
+  respawned by the session that failed it.
+- A failed task keeps blocking everything that depends on it; nothing here works around that.
+  It is retried by starting a new session on the same goal: the task is still startable, so the
+  loop picks it up like any other, and its report from the last attempt is at its output
+  location.
 - This session never creates a task, never blocks a task, and never edits a body. Remediation is
   the orchestrator's job on the next iteration. The `Problems` section of the implementing loop
   does not apply here; the only store write this session makes is completing a task.
@@ -59,7 +68,9 @@ mention that other tasks exist, never explain why this task was picked now.
 
 ## Stop
 
-- **Nothing `for-agent` is startable and nothing is in flight** — report one line per completed
-  task, with what it concluded or what problem it recorded, and point at
-  `dev-process-orchestrator.md` for the next iteration. Where a `for-agent` task is still pending
-  behind a human task, say so: it waits on the user, through `running-human-tasks.md`.
+- **Nothing `for-agent` is startable outside the failed set and nothing is in flight** — report
+  one line per completed task, with what it concluded, and one line per failed task, with where
+  its report is and which tasks it blocks. Failed tasks are retried by a new session on the same
+  goal; for everything else point at `dev-process-orchestrator.md` for the next iteration. Where
+  a `for-agent` task is still pending behind a human task, say so: it waits on the user, through
+  `running-human-tasks.md`.
