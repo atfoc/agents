@@ -9,6 +9,7 @@ One script per agent, in `scripts/`. Use the one for the agent the current sessi
 
 - `scripts/run-claude-task.sh` — under Claude Code.
 - `scripts/run-cursor-task.sh` — under Cursor.
+- `scripts/run-pi-task.sh` — under Pi.
 
 Each takes the prompt as its arguments, or on stdin when given no arguments, and starts a session
 that runs the prompt to completion without asking anyone anything. Its stdout is the session's

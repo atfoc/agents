@@ -25,5 +25,5 @@ for the tasks a person does.
 
 ## Helper directories
 
-- `scripts/` — `run-claude-task.sh` and `run-cursor-task.sh`, one per agent, each starting a new
-  non-interactive session on a prompt. Run them; do not read them for information.
+- `scripts/` — `run-claude-task.sh`, `run-cursor-task.sh` and `run-pi-task.sh`, one per agent, each
+  starting a new non-interactive session on a prompt. Run them; do not read them for information.

@@ -18,9 +18,9 @@ that prints only that task's body, worked out once before spawning anything. Wha
 
 - A same-agent subprocess is a new top-level session, started through the script in `scripts/`
   for the agent this session runs in — `run-claude-task.sh` under Claude Code,
-  `run-cursor-task.sh` under Cursor. Never spawn it as a subagent: a subagent cannot spawn
-  subagents of its own, and a split task runs two, an implement task one per slice. The rules for
-  a run are in `running-a-task-subprocess.md`.
+  `run-cursor-task.sh` under Cursor, `run-pi-task.sh` under Pi. Never spawn it as a subagent:
+  a subagent cannot spawn subagents of its own, and a split task runs two, an implement task
+  one per slice. The rules for a run are in `running-a-task-subprocess.md`.
 - Each same-agent subprocess is told to work through the `with-docs` skill, in addition to its
   task. The skill is named; no command is.
 - Only a subprocess whose report says the task is done, with its output written, completes the
