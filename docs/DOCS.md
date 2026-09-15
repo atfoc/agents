@@ -32,5 +32,12 @@ parent, used only when a doc points at it.
   next step planned, or when running the tasks a planning iteration created.
 - `local-tasks/` — the local folder task format and the commands that read and write it. Use when
   reading, creating or updating tasks in a local task folder.
+- `linear-tasks/` — tasks as Linear issues and sub-issues, and Linear documents attached to them:
+  the commands that create, block, tag, list and complete tasks, and create, link and read
+  documents. Use when tasks live in Linear, or when a document has to be attached to a Linear
+  issue.
+- `image-generation/` — generating an image from a text description through the OpenRouter API
+  with a bundled script. Use when the user asks for an image, picture, icon, illustration or asset
+  to be generated.
 - `docs/` — this collection's own format and how an agent searches it. Use when writing a new doc,
   adding an index entry, or setting up a docs collection.
