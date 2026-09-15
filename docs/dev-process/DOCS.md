@@ -21,9 +21,6 @@ does.
 - `dev-process-state.md` — the goal folder and the state file: where a goal's state, task outputs
   and store live, what the state file holds, and what a store description must say.
 - `task-kinds.md` — the six task kinds: who runs each, the doc each runs, and what each outputs.
-- `prototyping.md` — answering a question of whether something works or how it looks by building
-  in a branch: `for-agent` when the question is does-it-work, human when judgment is needed. Use
-  when a prototype task is run.
 
 ## Helper directories
 

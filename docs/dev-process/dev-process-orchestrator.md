@@ -47,8 +47,8 @@ name.
    goal that is still vague or too large to bound.
 
    If the outputs in hand are not enough to name the efforts that fit that flow, create only
-   research and prototype tasks that would make them nameable. A prototype is `for-agent` when the
-   question is whether something works or can work; human when it is how something looks or feels.
+   research and prototype tasks that would make them nameable. Whether a prototype is `for-agent`
+   or human follows from its question, as `task-kinds.md` says.
 
    Once an effort can be named and bounded, the tasks for it are that flow, in that order, each
    blocked by the one before. Several efforts may be in flight; each has its own slice store.
@@ -75,12 +75,13 @@ A task body is the whole assignment; whoever runs it reads nothing else. It carr
   startable;
 - its own output location, `./.tasks/{goalName}/task-outputs/{taskKey}/…`, stated as overriding
   any default output path the doc behind the kind would otherwise use;
+- for a prototype, its mode — without or with a human in the loop — and its key as the
+  prototype's name;
 - for the kinds that create or work a store — split tasks, implement tasks — the store
   description verbatim, with the slice-store placement filled in for that flow.
 
-`for-agent` tasks are tagged so on creation; human tasks carry no tag. Prototype is either: tag it
-`for-agent` when the question is whether it works or can work; leave it untagged when the question
-is how it looks or feels.
+`for-agent` tasks are tagged so on creation; human tasks carry no tag. A prototype without a human
+in the loop is tagged `for-agent`; one with a human in the loop is left untagged.
 
 ## Two stores
 

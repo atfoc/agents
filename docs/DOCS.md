@@ -15,6 +15,10 @@ parent, used only when a doc points at it.
   what holds across the whole set of slices.
 - `explaining-code.md` — explaining code at the abstraction level the user asked for. Use when the
   user asks a question about the codebase.
+- `prototyping.md` — answering a question words cannot settle by building it in a branch:
+  without a human in the loop, to find out whether something works or how it behaves; with one,
+  as variants the user reacts to and can move between. Use when something has to be tried in code
+  before it can be decided.
 
 ## Directories
 

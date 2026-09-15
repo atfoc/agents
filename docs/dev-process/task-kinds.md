@@ -15,10 +15,12 @@ and run in the foreground.
 - **implementation definition** — human. Runs
   `../feature-implementation/defining-implementation.md` on the feature definition the body points
   at. Output: the implementation spec.
-- **prototype** — `for-agent` or human. Runs `prototyping.md` on the question in the body.
-  `for-agent` when the question is whether something works or can work in real code. Human when it
-  needs a person's judgment — how it looks, how it feels. Output: the question, what was tried,
-  what it settled, and the branch as a pointer.
+- **prototype** — `for-agent` or human. Runs `../prototyping.md` on the question in the body.
+  `for-agent`, without a human in the loop, when the question is whether something works, can
+  work, or how it behaves in real code. Human, with a human in the loop, when it needs a person's
+  judgment — how it looks, how it feels. The body names the mode and gives the task key as the
+  prototype's name. Output: the question, what was tried, what it settled, and the branch as a
+  pointer.
 - **split tasks** — `for-agent`. Runs
   `../feature-implementation/spec-to-task-dual-agent-workflow.md` on the spec and feature
   definition the body points at, into the slice store the body describes. Output: the slice
