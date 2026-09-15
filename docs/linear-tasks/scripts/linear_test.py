@@ -197,6 +197,9 @@ class FakeLinear:
             issue["stateId"] = data["stateId"]
         if "parentId" in data:
             issue["parentId"] = data["parentId"]
+        for field in ("title", "description"):
+            if field in data:
+                issue[field] = data[field]
         for label_id in data.get("addedLabelIds", []):
             if label_id not in issue["labelIds"]:
                 issue["labelIds"].append(label_id)
@@ -514,6 +517,19 @@ class LinearTestCase(unittest.TestCase):
         self.assertEqual(run_json(["set-parent", "--id", "ENG-2", "--parent", "ENG-1"])["parent"], "ENG-1")
         self.assertIn("cannot be its own parent",
                       self.run_err(["set-parent", "--id", "ENG-1", "--parent", "ENG-1"]))
+
+    def test_update_replaces_body_and_optionally_title(self):
+        self.create("A", "--team", "ENG", "--tag", "for-agent", body="old")
+        run(["block", "--id", "ENG-1", "--blocked-by", self.create("B", "--team", "ENG")["id"]])
+        task = run_json(["update", "--id", "eng-1"], stdin="new")
+        self.assertEqual((task["title"], task["tags"], task["blockedBy"]), ("A", ["for-agent"], ["ENG-2"]))
+        self.assertEqual(run(["body", "--id", "ENG-1"]), "new\n")
+        self.assertEqual(run_json(["update", "--id", "ENG-1", "--title", " A v2 "], stdin="newer")["title"],
+                         "A v2")
+        self.assertEqual(run(["body", "--id", "ENG-1"]), "newer\n")
+        self.assertIn("task body is empty", self.run_err(["update", "--id", "ENG-1"], stdin=" \n"))
+        self.assertIn("title is empty", self.run_err(["update", "--id", "ENG-1", "--title", " "], stdin="x"))
+        self.assertEqual(run(["body", "--id", "ENG-1"]), "newer\n")
 
     # --- documents ---
 

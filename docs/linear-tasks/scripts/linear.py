@@ -486,6 +486,18 @@ def cmd_set_parent(args):
     return 0
 
 
+def cmd_update(args):
+    issue = fetch_issue(args.id)
+    fields = {"description": read_stdin("task body")}
+    if args.title is not None:
+        if args.title.strip() == "":
+            die("title is empty")
+        fields["title"] = args.title.strip()
+    update_issue(issue, fields)
+    print_json(public(fetch_issue(issue["id"])))
+    return 0
+
+
 # --- document commands -----------------------------------------------------
 
 
@@ -617,6 +629,11 @@ def build_parser():
     p.add_argument("--id", required=True)
     p.add_argument("--parent", required=True)
     p.set_defaults(func=cmd_set_parent)
+
+    p = sub.add_parser("update")
+    p.add_argument("--id", required=True)
+    p.add_argument("--title")
+    p.set_defaults(func=cmd_update)
 
     p = sub.add_parser("doc-create")
     p.add_argument("--title", required=True)

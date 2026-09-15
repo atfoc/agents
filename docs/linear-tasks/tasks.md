@@ -63,6 +63,9 @@ Rules:
 - **Unblock a task** — `SCRIPT unblock --id <id> --blocked-by <id> …`; fails when a given task
   does not block it.
 - **Tag a task** — `SCRIPT tag --id <id> --tag <tag> …`; adds, never removes.
+- **Replace a task's body** — `SCRIPT update --id <id> [--title "<title>"]`, the full new body on
+  **stdin**; prints the task. It replaces, never appends: to change part of a body, fetch it with
+  `body`, then write back the whole of it. Blockers, tags and parent are untouched.
 
 `body` prints the body alone — no id, title, blockers or status — so it can be given to someone who
 must see only the body.

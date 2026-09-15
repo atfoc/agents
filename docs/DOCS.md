@@ -33,9 +33,12 @@ parent, used only when a doc points at it.
 - `local-tasks/` — the local folder task format and the commands that read and write it. Use when
   reading, creating or updating tasks in a local task folder.
 - `linear-tasks/` — tasks as Linear issues and sub-issues, and Linear documents attached to them:
-  the commands that create, block, tag, list and complete tasks, and create, link and read
+  the commands that create, block, tag, update, list and complete tasks, and create, link and read
   documents. Use when tasks live in Linear, or when a document has to be attached to a Linear
   issue.
+- `asana-tasks/` — tasks as Asana tasks and subtasks, and markdown documents attached to them: the
+  commands that create, block, tag, update, list and complete tasks, and create, link and read
+  documents. Use when tasks live in Asana, or when a document has to be attached to an Asana task.
 - `image-generation/` — generating an image from a text description through the OpenRouter API
   with a bundled script. Use when the user asks for an image, picture, icon, illustration or asset
   to be generated.
