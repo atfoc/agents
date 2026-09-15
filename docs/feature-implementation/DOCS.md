@@ -10,11 +10,11 @@ Order: `defining-feature.md` → `defining-implementation.md` → `split-work-in
 ## Docs
 
 - `defining-feature.md` — producing a feature definition: what is being built, never how. Output is
-  `feature-design.md`. Use when the user describes something they want built and there is no
-  written definition of it yet.
+  a file at the location the user gives. Use when the user describes something they want built and
+  there is no written definition of it yet.
 - `defining-implementation.md` — turning a feature definition into a detailed implementation spec.
-  Output is `implementation-spec.md`. Use when a feature is defined and the technical approach has
-  to be worked out.
+  Output is a file at the location the user gives. Use when a feature is defined and the technical
+  approach has to be worked out.
 - `split-work-into-vertical-slices.md` — cutting a large chunk of work into the slices that become
   tasks: how to cut, how to write each body, how to decide blockers. Use when a spec or a large
   piece of work has to become individual tasks.

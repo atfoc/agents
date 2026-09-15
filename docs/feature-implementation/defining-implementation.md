@@ -1,16 +1,18 @@
 # Defining an implementation
 
 Output: an implementation spec — a fully detailed set of instructions for what changes, where, and
-how it is verified. Written to `implementation-spec.md` in the same directory as the feature
-definition it came from.
+how it is verified. It is always written to a file, at the location the user gives. There is no
+default location, and it is never derived from where the feature definition lives: if the user has
+not said where the spec goes, ask. Never pick a location yourself.
 
 Run it as an interactive session — see `../asking-questions.md`.
 
 ## Input
 
-A path to a feature definition, or a feature definition produced earlier in the conversation. If
-there is neither, stop and ask for one. Never invent a feature definition and never start from a
-bare description.
+A feature definition: its location as the user gives it, or one produced earlier in the
+conversation. If neither was provided, ask the user whether a feature definition exists and where it
+is. Never go looking for one — not next to where the spec is written, not anywhere else. Never
+invent a feature definition and never start from a bare description.
 
 ## Required level of detail
 
@@ -32,5 +34,5 @@ point is shared understanding of the whole implementation.
 
 ## Stop
 
-After `implementation-spec.md` is written, report the path and stop. Do not split the spec into
+After the implementation spec is written, report the path and stop. Do not split the spec into
 tasks and do not implement it — see `split-work-into-vertical-slices.md`.

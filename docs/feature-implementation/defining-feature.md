@@ -1,8 +1,8 @@
 # Defining a feature
 
 Output: a feature definition — a high level description of **what** is being built, never how.
-It is written to `./.tasks/{taskName}/feature-design.md`, with `{taskName}` inferred from the
-conversation.
+It is always written to a file, at the location the user gives. There is no default location: if
+the user has not said where it goes, ask. Never pick a location yourself.
 
 Run it as an interactive session — see `../asking-questions.md` for the loop, the repeat rule, and
 the write-approval rule.
@@ -31,8 +31,9 @@ changes for the project, not by how the code is rearranged.
 
 ## Stop
 
-After `feature-design.md` is written, report the path and stop. Producing the implementation spec
-is a separate step — `defining-implementation.md`. Do not split into tasks and do not implement.
+After the feature definition is written, report the path and stop. Producing the implementation
+spec is a separate step — `defining-implementation.md`. Do not split into tasks and do not
+implement.
 
 When both documents are wanted in one session, run this one to its own completion first — its own
 approval, its own file write — then start `defining-implementation.md` with the path just written.
