@@ -20,3 +20,7 @@ Every command that returns a document prints `id`, `title`, `url`, `issue` (the 
 - **A document's details** — `SCRIPT doc-get --doc <document>`.
 - **Fetch a document's content** — `SCRIPT doc-content --doc <document>`; prints the markdown alone.
 - **Replace a document's content** — `SCRIPT doc-update --doc <document> [--title "<title>"]`, the full new content on stdin. It replaces, never appends: to add to a document, fetch its content, then write back the whole of it.
+
+## Markdown that Linear rewrites
+
+Linear renumbers numbered lists when it saves document content, so a list written `1.`, `5.`, `6.`, `8.` is stored as `1.`, `2.`, `3.`, `4.` and references such as "step 5" stop matching. Before sending content with `doc-create` or `doc-update`, rewrite each numbered list item `N. text` as a bullet with the number in bold, `- **N.** text`. Keep continuation lines indented under the item. Leave numbers inside code blocks alone.

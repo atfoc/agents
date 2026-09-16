@@ -10,9 +10,15 @@ Act on the request in the skill argument, or the Linear work named earlier in th
 ## Access
 
 1. Every read and every write of Linear, issues and documents alike, goes through `scripts/linear.py`. Never reach Linear any other way — no other API calls, no MCP servers, no browser.
-2. `SCRIPT` below and in `references/` stands for `python3 scripts/linear.py`, written out as that literal absolute path. Use the literal path in every command, including any command you hand to someone else: no shell variables, nothing relative to a working directory. The script needs only Python 3. Run it; do not read it for information.
+2. `SCRIPT` below and in `references/` stands for `python3 scripts/linear.py`. Use the literal path in every command, including any command you hand to someone else: no shell variables. The script needs only Python 3. Run it; do not read it for information.
 3. The script reads a Linear personal API key from `LINEAR_API_KEY`. When a command fails with `LINEAR_API_KEY is not set`, report that the user must create a key in Linear under Settings → Security & access → Personal API keys and export it in the environment the script runs in, then stop. Never ask for the key in the conversation, and never write it into a file or a command line.
 4. Pass bodies and document content on stdin with a quoted heredoc, such as `SCRIPT update --id ENG-1 <<'EOF'` … `EOF`. Empty stdin fails.
+
+## Markdown that Linear rewrites
+
+Linear rewrites markdown when it saves a body or document content, and it renumbers numbered lists: a list written `1.`, `5.`, `6.`, `8.` is stored as `1.`, `2.`, `3.`, `4.`, so references such as "step 5" or "step 11" stop matching. This happens whenever a task copies only some of the steps out of a longer numbered list, such as one in a spec.
+
+Before sending any body or document content to Linear — `create`, `update`, and every document write — rewrite each numbered list item `N. text` as a bullet with the number in bold, `- **N.** text`. Keep continuation lines indented under the item. Leave numbers inside code blocks alone.
 
 ## Referring to things
 

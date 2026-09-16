@@ -15,6 +15,12 @@ Act on the request in `$ARGUMENTS`, or the Linear work named earlier in the conv
 3. The script reads a Linear personal API key from `LINEAR_API_KEY`. When a command fails with `LINEAR_API_KEY is not set`, report that the user must create a key in Linear under Settings → Security & access → Personal API keys and export it in the environment the script runs in, then stop. Never ask for the key in the conversation, and never write it into a file or a command line.
 4. Pass bodies and document content on stdin with a quoted heredoc, such as `SCRIPT update --id ENG-1 <<'EOF'` … `EOF`. Empty stdin fails.
 
+## Markdown that Linear rewrites
+
+Linear rewrites markdown when it saves a body or document content, and it renumbers numbered lists: a list written `1.`, `5.`, `6.`, `8.` is stored as `1.`, `2.`, `3.`, `4.`, so references such as "step 5" or "step 11" stop matching. This happens whenever a task copies only some of the steps out of a longer numbered list, such as one in a spec.
+
+Before sending any body or document content to Linear — `create`, `update`, and every document write — rewrite each numbered list item `N. text` as a bullet with the number in bold, `- **N.** text`. Keep continuation lines indented under the item. Leave numbers inside code blocks alone.
+
 ## Referring to things
 
 - **Task** — its issue identifier, such as `ENG-123`; case does not matter.
