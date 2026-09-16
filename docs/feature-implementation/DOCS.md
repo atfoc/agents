@@ -16,10 +16,10 @@ Order: `defining-feature.md` → `defining-implementation.md` or `defining-imple
   in an interactive question session with the user. Output is a file at the location the user
   gives. Use when a feature is defined and the technical approach has to be worked out with the
   user.
-- `defining-implementation-auto.md` — turning a feature definition into a detailed implementation
-  spec without asking the user anything: open questions are settled from the codebase, the docs or
-  a prototype, and every choice is recorded in the spec. Output is a file at the location the user
-  gives. Use when a feature is defined and the spec is to be written without questions.
+- `defining-implementation-auto.md` — turning whatever describes the work — a feature definition, a
+  prompt, the conversation — into a detailed implementation spec without asking the user anything:
+  every open question is settled by choosing, grounded in the codebase's existing patterns. Output
+  is a file at the location the user gives. Use when the spec is to be written without questions.
 - `implementation-spec.md` — what an implementation spec is and the level of detail it requires:
   signatures, pseudo code, a location for every item, test cases.
 - `split-work-into-vertical-slices.md` — cutting a large chunk of work into the slices that become
