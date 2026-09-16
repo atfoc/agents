@@ -10,7 +10,7 @@ The feature is what the user named: $ARGUMENTS, or what was described earlier in
 
 ## 1. Build the document by asking questions
 
-The feature definition is a document to be worked out by being asked questions instead of having it written for you. Build it together with the user by asking one question at a time, each with a recommended answer, and write it to file only once the user approves. Do not write the document for the user, and do not skip the questions.
+The feature definition is a document the user wants to work out by being asked questions instead of having it written for you. Build it that way, with the feature as the document's subject and section 2 as what the questions must cover.
 
 The document is written to the location the user gives. There is no default location — if the user has not said where it goes, ask. Never pick a location yourself.
 
