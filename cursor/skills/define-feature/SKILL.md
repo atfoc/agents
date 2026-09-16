@@ -9,7 +9,7 @@ The feature is what the user named in the skill argument, or what was described 
 
 ## 1. Build the document by asking questions
 
-Build the feature definition together with the user by asking one question at a time, each with a recommended answer, and write it to file only once the user approves. Do not write the document for the user.
+The feature definition is a document to be worked out by being asked questions instead of having it written for you. Build it together with the user by asking one question at a time, each with a recommended answer, and write it to file only once the user approves. Do not write the document for the user, and do not skip the questions.
 
 The document is written to the location the user gives. There is no default location — if the user has not said where it goes, ask. Never pick a location yourself.
 
