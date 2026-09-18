@@ -39,18 +39,28 @@ question, say it is missing, write that to the output location, and stop.
 
 ## 3b. With a human in the loop
 
-Every round produces a variant: one version the user can judge.
+Every round produces one or more variants: versions the user can judge. The user compares them by
+switching inside the running prototype — never by checking out commits.
 
-- Build one variant. Commit it as `variant <n>: <what it is>`, add it to the variant list in the
-  output, and show it to the user in whatever form lets them judge it — run it, capture it, or
-  point at the code.
+- **Build a switch first.** Before the first variant, give the prototype one way to move between
+  variants while it runs, showing which one is active by number and name:
+  - with a UI, an on-screen control — a small floating picker or toolbar, with a keyboard shortcut
+    to cycle — that swaps the variant in place, without a restart, and keeps the user's place;
+  - without a UI — a CLI, an API, a library — a flag, an argument or an environment variable that
+    selects the variant, with every variant runnable from the same checkout.
+- **Keep every variant in the code at once.** Add each variant alongside the earlier ones behind the
+  switch, never in place of them, so the latest commit holds all of them. When a variant comes from
+  an earlier one, start from that variant's files and add it as a new entry.
+- Build the variants asked for. When the user asks for several — "give me 3 options" — build them
+  all in the same round, each a genuinely different direction, and put them all behind the switch.
+  Otherwise build one. Commit each as `variant <n>: <what it is>`, add it to the variant list in the
+  output, and show it to the user: run the prototype, say how to switch, and capture it when
+  that helps them judge.
 - Take what the user wants next: a change, a new direction, or another look at an earlier variant.
   Build the next variant from the one they name — the latest when they name none — and show it.
-- When asked, list the variants, or put the worktree back on any one of them and show it again.
-- Build a variant that comes from an earlier one starting from that variant's files, and commit it
-  on top of the branch, so the branch stays linear and no variant is lost.
-- When variants can sit side by side — screens, components, copy — give the prototype a switch
-  between them too, so the user can compare without asking. The commits stay the record.
+- When asked, list the variants, or switch to any one of them and show it again.
+- The commits stay the record; the switch is how the user compares. The switch is scaffolding for
+  judging, not part of the answer.
 - Repeat until the user names the variant that answers the question. Whether it is answered is the
   user's call, never yours.
 
@@ -62,7 +72,8 @@ variant list can be read while the session is still going. It holds:
 - the question and the mode;
 - the branch and worktree name;
 - what was tried — without a human, one line per attempt; with a human, the variant list: number,
-  one line on what it is, its commit, and how to see it;
+  one line on what it is, its commit, and how to switch to it;
+- with a human, how to run the prototype and use the switch;
 - the answer — without a human, what was found and the evidence: what was run and what it showed;
   with a human, the chosen variant and what it settled, in words, so the answer is usable without
   reading the code.
