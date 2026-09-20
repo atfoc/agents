@@ -199,6 +199,25 @@ const res = await d.commit();
 console.log("${REPORT}" + JSON.stringify(res));
 `;
 
+// script 6 stands in for the tab's ⌘K: the page posts what the user pointed at
+// to POST /mark and copies only the handle it gets back. Headless Chrome has no
+// keyboard to press, so the post is made the way the page makes it and the
+// handle is then resolved exactly as an agent resolves a paste.
+const SCRIPT6 = `import { connect, post, session } from ${JSON.stringify(LIB)};
+import { formatMarkHandle, formatSelectionBlock } from ${JSON.stringify(path.join(SKILL, "lib", "format.ts"))};
+
+const d = await connect();
+const s = session();
+const box = d.find({ key: "a" });
+const elements = [{ id: box.id, type: box.type, x: box.x, y: box.y, width: box.width, height: box.height, key: "a", label: d.labelOf(box) }];
+const viewport = { x: 0, y: 0, width: 1400, height: 900, zoom: 1 };
+const text = formatSelectionBlock({ file: "drawing.excalidraw", rev: d.rev, elements, viewport, total: 1 });
+const r = await post(s, "/mark", { kind: "selection", file: "drawing.excalidraw", rev: d.rev, text, elements, total: 1, viewport });
+const handle = formatMarkHandle({ kind: "selection", id: r.id, file: "drawing.excalidraw", rev: d.rev, count: 1 });
+const back = await d.mark(handle);            // the whole pasted line, not just the id
+console.log("${REPORT}" + JSON.stringify({ id: r.id, handle, back, marks: await d.marks() }));
+`;
+
 // ---- the run
 async function main() {
   const pre = xl(["check"]);
@@ -286,12 +305,29 @@ async function main() {
   check("it hit no conflicts and the scene still holds 5 elements", r4.conflicts.length === 0 && r4.live === 5,
         `live=${r4.live} conflicts=${JSON.stringify(r4.conflicts)}`);
 
-  // 7. script 5 — someone else writes the file
+  // 7. script 6 — a ⌘K mark, stored by the server and read back by its handle
+  script("script6", SCRIPT6);
+  const r6 = runScript("script6");
+  check("a mark comes back under a short id", /^xlm_[0-9a-f]{8}$/.test(r6.id ?? ""), JSON.stringify(r6.id));
+  check("the handle is one line the user can read", r6.handle === `@excalidraw selection ${r6.id} — 1 element in drawing.excalidraw (rev ${r6.back.rev})`, r6.handle);
+  check("the pasted line resolves to the marked element", r6.back?.elements?.[0]?.key === "a" && r6.back.kind === "selection",
+        JSON.stringify(r6.back));
+  check("the mark keeps the block as it read at the time", String(r6.back?.text ?? "").startsWith("@excalidraw selection —"), r6.back?.text);
+  check("the session lists the mark it took", r6.marks?.[0]?.id === r6.id && r6.marks[0].count === 1, JSON.stringify(r6.marks));
+
+  const resolved = xl(["mark", r6.id, "--session-dir", sessionDir]);
+  check("xl.mjs mark resolves the same id", resolved.code === 0 && resolved.json?.id === r6.id,
+        `exit ${resolved.code}\n${resolved.err || resolved.out}`);
+  const missing = xl(["mark", "xlm_deadbeef", "--session-dir", sessionDir]);
+  check("an id from no session fails as NO_MARK", missing.code === 1 && missing.err.startsWith("NO_MARK:"),
+        `exit ${missing.code}\n${missing.err || missing.out}`);
+
+  // 8. script 5 — someone else writes the file
   script("script5", SCRIPT5);
   const r5 = runScript("script5");
   check("the next commit reports externalChange", r5.externalChange === true, JSON.stringify(r5));
 
-  // 8. stop
+  // 9. stop
   const stopped = xl(["stop", "--session-dir", sessionDir]);
   check("stop exits 0 and confirms the session is gone", stopped.code === 0 && stopped.json?.stopped === true,
         `exit ${stopped.code}\n${stopped.err || stopped.out}`);

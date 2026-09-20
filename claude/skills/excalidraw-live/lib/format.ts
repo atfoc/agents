@@ -134,3 +134,19 @@ function compass(dx: number, dy: number): string {
   const vertical = ay >= major * 0.4 ? (dy < 0 ? "above" : "below") : "";
   return [vertical, horizontal].filter(Boolean).join("-");
 }
+
+/**
+ * The one line ⌘K and ⌘⇧K put on the clipboard: a handle to a mark the session
+ * server holds, with just enough beside it that the user can see what they
+ * copied. The block itself stays on the server and the agent reads it back
+ * with `getMark`.
+ */
+export function formatMarkHandle(o: {
+  kind: "selection" | "point"; id: string; file: string; rev: number;
+  count?: number; point?: [number, number];
+}): string {
+  const what = o.kind === "selection"
+    ? `${o.count ?? 0} element${o.count === 1 ? "" : "s"}`
+    : `(${round(o.point?.[0] ?? 0)},${round(o.point?.[1] ?? 0)})`;
+  return `@excalidraw ${o.kind} ${o.id} — ${what} in ${o.file} (rev ${o.rev})`;
+}

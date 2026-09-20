@@ -3,6 +3,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { formatScene, type FmtElement } from "./format.ts";
+import type { Mark, MarkSummary } from "./marks.ts";
+
+export type { Mark, MarkInput, MarkKind, MarkSummary } from "./marks.ts";
 
 export type Mode = "headless" | "shared";
 export type Ref = { id: string } | { key: string };
@@ -148,6 +151,20 @@ export class Drawing {
   }
   selection() { return call(this.s, "getSelection").then((r: any) => r.elements); }
   viewport() { return call(this.s, "getViewport"); }
+
+  /**
+   * What the user pointed at with ⌘K or ⌘⇧K, by the id they pasted. The whole
+   * pasted line works as well as the bare id. A mark is a record of the moment
+   * it was taken: its `text` is the block as it read then, and its element ids
+   * and keys still resolve against the scene now. Throws `NO_MARK` when the id
+   * is not this session's — marks do not outlive the session.
+   */
+  mark(id: string): Promise<Mark> { return call(this.s, "getMark", { id }); }
+
+  /** The marks taken this session, newest first. */
+  marks(limit = 10): Promise<MarkSummary[]> {
+    return call(this.s, "getMarks", { limit }).then((r: any) => r.marks);
+  }
 
   // ---- change (collected, sent on commit)
   private ref(t: Target): Ref {

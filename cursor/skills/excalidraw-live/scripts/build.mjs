@@ -31,16 +31,19 @@ export function cacheRoot() {
 
 /**
  * The files the build output depends on, relative to the skill root, sorted.
- * SKILL.md, references/ and tests/ are deliberately absent: a port of this skill
- * to another harness rewrites only SKILL.md and must resolve to the same entry.
- * node_modules is never walked.
+ * `lib/` is in here because both bundles reach into it — the page through the
+ * shortcuts, the server through the mark store — so an edit there has to change
+ * the id like any other source. SKILL.md, references/ and tests/ are
+ * deliberately absent: a port of this skill to another harness rewrites only
+ * SKILL.md and must resolve to the same entry. node_modules is never walked.
  */
 export function sourceFiles(root = SKILL_DIR) {
   const list = ["scripts/build/package-lock.json", "scripts/build.mjs", "app/index.html", "server/server.ts"];
-  const appDir = path.join(root, "app");
-  if (fs.existsSync(appDir)) {
-    for (const name of fs.readdirSync(appDir)) {
-      if (/\.(ts|tsx)$/.test(name) && fs.statSync(path.join(appDir, name)).isFile()) list.push(`app/${name}`);
+  for (const dir of ["app", "lib"]) {
+    const full = path.join(root, dir);
+    if (!fs.existsSync(full)) continue;
+    for (const name of fs.readdirSync(full)) {
+      if (/\.(ts|tsx)$/.test(name) && fs.statSync(path.join(full, name)).isFile()) list.push(`${dir}/${name}`);
     }
   }
   return [...new Set(list)].filter((rel) => fs.existsSync(path.join(root, rel))).sort();

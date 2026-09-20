@@ -20,7 +20,7 @@ prints `buildDir` (where it goes), `buildId`, `buildPresent` (`false` means the 
 node ${CLAUDE_SKILL_DIR}/bin/xl.mjs build
 ```
 
-Because the id is a hash of `app/`, `server/server.ts`, `app/index.html`, `scripts/build.mjs` and the build's lockfile, editing any of them builds again under a new id, and the old entry stays until it is swept. `SKILL.md`, `references/` and `tests/` are not hashed: editing documentation never causes a rebuild. Only the two newest entries are kept.
+Because the id is a hash of `app/`, `lib/`, `server/server.ts`, `app/index.html`, `scripts/build.mjs` and the build's lockfile, editing any of them builds again under a new id, and the old entry stays until it is swept. `SKILL.md`, `references/` and `tests/` are not hashed: editing documentation never causes a rebuild. Only the two newest entries are kept.
 
 `$EXCALIDRAW_LIVE_CACHE` overrides where the cache lives; `$EXCALIDRAW_LIVE_DIST` points at a build directory directly and is used verbatim, never rebuilt into.
 
@@ -90,9 +90,19 @@ All three mean the call did not reach a working engine, and none of them is retr
 - `TIMEOUT` — the engine took longer than 15 s to answer, or 60 s for a `render`. A huge scene or a huge export does this. Read the scene again before assuming the call did nothing.
 - `ENGINE_CHANGED` — the engine was replaced or disconnected while the call was in flight, which is what a promotion looks like from the agent's side. The outcome is unknown: read the scene again, and never re-send the call on top of it.
 
+## `NO_MARK`
+
+The id the user pasted is not one this session holds. ⌘K and ⌘⇧K store what the user pointed at in the session server's memory and copy only its id, so an id outlives nothing: stopping the session, or starting a second one for the same drawing, loses every mark it had. The session also keeps only its last 200.
+
+```
+node ${CLAUDE_SKILL_DIR}/bin/xl.mjs mark --session-dir <dir>
+```
+
+lists the marks that are left, newest first. If the one the user meant is not among them, ask them to press ⌘K again — never guess at what was selected, and never substitute `d.selection()` for it, which says what is selected now rather than what they meant then.
+
 ## `server.log`
 
-`<session-dir>/server.log` holds the session server's stdout and stderr: the startup line with the port and mode, lock messages, tab connections and role changes, external-change notices, `notify` messages that had no tab to show them, and Chrome failing to launch. `start` prints its tail when the server exits during startup. Read it before guessing at `NO_ENGINE`.
+`<session-dir>/server.log` holds the session server's stdout and stderr: the startup line with the port and mode, lock messages, tab connections and role changes, external-change notices, the id of every ⌘K mark, `notify` messages that had no tab to show them, and Chrome failing to launch. `start` prints its tail when the server exits during startup. Read it before guessing at `NO_ENGINE`.
 
 ## Limits
 

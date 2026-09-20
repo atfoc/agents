@@ -16,6 +16,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { BadMark, MarkStore, validateMark } from "../lib/marks.ts";
 
 type Mode = "headless" | "shared";
 // A `ws` WebSocket. Typed loosely so this file can be imported as source — the
@@ -67,6 +68,11 @@ let enginePid: number | null = null;  // the headless Chrome we own, if any
 const tabs = new Set<Sock>();
 let lastWrittenHash = hash(fs.readFileSync(file, "utf8"));
 let externalChangePending = false;    // cleared when reported in an apply result
+
+// What the user pointed at with ⌘K / ⌘⇧K, kept here rather than on the
+// clipboard: the tab posts it, only the id is copied, and the agent reads the
+// mark back with getMark. Memory only — marks die with the session.
+const marks = new MarkStore();
 
 const token = crypto.randomBytes(32).toString("hex");
 const startedAt = new Date().toISOString();
@@ -293,6 +299,18 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       if (!auth(req)) return json(res, 401, { ok: false, error: { code: "UNAUTHORIZED", message: "bad token" } });
       touchIdle();
       const { method, params } = await readBody(req);
+      // The mark calls are the server's own: it holds the marks, so they answer
+      // without the page and keep answering after the engine has changed.
+      if (method === "getMark") {
+        const m = marks.get(params?.id);
+        if (!m) {
+          return json(res, 200, { ok: false, error: { code: "NO_MARK", message: `no mark ${JSON.stringify(params?.id ?? null)} in this session — marks live in the session's memory, so ask the user to press ⌘K again`, data: { recent: marks.recent(5) } } });
+        }
+        return json(res, 200, { ok: true, result: m });
+      }
+      if (method === "getMarks") {
+        return json(res, 200, { ok: true, result: { marks: marks.recent(Number(params?.limit) || 10) } });
+      }
       // reload is the server's own: it reads the file, so it works headless and
       // is the one call that does not need the page to answer.
       if (method === "reload") {
@@ -308,6 +326,20 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse) {
       // not show goes to the log rather than nowhere.
       if (method === "notify" && r.ok && r.result?.shown === false) log(`notify[${params?.level ?? "info"}] ${params?.text ?? ""}`);
       return json(res, 200, r);
+    }
+    // The tab's ⌘K / ⌘⇧K. The page posts what the user pointed at and copies
+    // only the id it gets back, so the chat carries a handle, not a scene.
+    if (url.pathname === "/mark" && req.method === "POST") {
+      if (!auth(req)) return json(res, 401, { ok: false, error: { code: "UNAUTHORIZED", message: "bad token" } });
+      let mark;
+      try {
+        mark = marks.put(validateMark(await readBody(req)));
+      } catch (e: any) {
+        const bad = e instanceof BadMark;
+        return json(res, bad ? 400 : 500, { ok: false, error: { code: bad ? "BAD_MARK" : "INTERNAL", message: String(e?.message ?? e) } });
+      }
+      log(`mark ${mark.id} (${mark.kind}, rev ${mark.rev})`);
+      return json(res, 200, { ok: true, id: mark.id, at: mark.at });
     }
     if (url.pathname === "/open" && req.method === "POST") {
       if (!auth(req)) return json(res, 401, { ok: false, error: { code: "UNAUTHORIZED", message: "bad token" } });

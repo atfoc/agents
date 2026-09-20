@@ -31,6 +31,8 @@ function fixture(overrides = {}) {
     "app/main.tsx": "export const main = 1;\n",
     "app/ui.tsx": "export const ui = 1;\n",
     "app/engine.ts": "export const engine = 1;\n",
+    "lib/format.ts": "export const format = 1;\n",
+    "lib/marks.ts": "export const marks = 1;\n",
     "server/server.ts": "export const server = 1;\n",
     "SKILL.md": "# excalidraw-live\n",
     "references/api.md": "# api\n",
@@ -57,6 +59,15 @@ test("one byte changed in app/ui.tsx is a different id", () => {
   const root = fixture();
   const before = buildId(false, root);
   write(root, "app/ui.tsx", "export const ui = 2;\n");
+  assert.notEqual(buildId(false, root), before);
+});
+
+test("one byte changed in lib/ is a different id", () => {
+  // Both bundles reach into lib/ — the page for the shortcuts, the server for
+  // the mark store — so an edit there must not be served from a stale entry.
+  const root = fixture();
+  const before = buildId(false, root);
+  write(root, "lib/marks.ts", "export const marks = 2;\n");
   assert.notEqual(buildId(false, root), before);
 });
 

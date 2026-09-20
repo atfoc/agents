@@ -7,6 +7,7 @@
 //   node bin/xl.mjs status [--session-dir <dir>]
 //   node bin/xl.mjs open   [--session-dir <dir>]
 //   node bin/xl.mjs stop   [--session-dir <dir>]
+//   node bin/xl.mjs mark   [<id>] [--session-dir <dir>]
 //   node bin/xl.mjs build  [--force] [--with-cjk] [--offline]
 //   node bin/xl.mjs check
 //
@@ -31,6 +32,7 @@ const USAGE = `usage:
   xl.mjs status [--session-dir <dir>]
   xl.mjs open   [--session-dir <dir>]
   xl.mjs stop   [--session-dir <dir>]
+  xl.mjs mark   [<id>] [--session-dir <dir>]
   xl.mjs build  [--force] [--with-cjk] [--offline]
   xl.mjs check`;
 
@@ -59,8 +61,10 @@ export function parseArgs(argv) {
   if (mode !== undefined && mode !== "headless" && mode !== "shared") {
     die("BAD_MODE", `--mode must be headless or shared (got ${mode})`);
   }
+  const words = argv.filter((a, i) => !a.startsWith("-") && !argv[i - 1]?.startsWith("--"));
   return {
-    cmd: argv.find((a) => !a.startsWith("-")),
+    cmd: words[0],
+    id: words[1],
     file: get("--file"),
     sessionDir: get("--session-dir"),
     mode,
@@ -303,6 +307,30 @@ export async function cmdStop(a) {
   out({ stopped: true, wasRunning: true, port: s.port, file: s.file, sessionDir: dir, confirmed: stopped });
 }
 
+/**
+ * A ⌘K / ⌘⇧K mark, by the id the user pasted — the whole pasted line is fine,
+ * the id is picked out of it. With no id, the marks taken this session.
+ * `text` in the answer is the block as it read when the user took it.
+ */
+export async function cmdMark(a) {
+  const dir = needSessionDir(a);
+  let s;
+  try {
+    s = readSession(dir);
+  } catch (e) {
+    die("NO_SESSION", `${e.message} — run: xl.mjs start --file <path.excalidraw>`);
+  }
+  const id = a.id;
+  let r;
+  try {
+    r = await post(s, "/rpc", id ? { method: "getMark", params: { id } } : { method: "getMarks", params: {} });
+  } catch (e) {
+    die("NO_SESSION", `the session on port ${s.port} did not answer: ${String(e && e.message ? e.message : e)}`);
+  }
+  if (!r.ok) die(r.error?.code ?? "FAILED", r.error?.message ?? "the session refused the call");
+  out(r.result);
+}
+
 export async function cmdBuild(a) {
   const r = build({ withCjk: !!a.withCjk, force: !!a.force, offline: !!a.offline });
   // start's stdout is one session object, so a build it triggered reports aside.
@@ -353,7 +381,7 @@ export async function cmdCheck() {
 
 // ---- main
 
-const COMMANDS = { start: cmdStart, status: cmdStatus, open: cmdOpen, stop: cmdStop, build: cmdBuild, check: cmdCheck };
+const COMMANDS = { start: cmdStart, status: cmdStatus, open: cmdOpen, stop: cmdStop, mark: cmdMark, build: cmdBuild, check: cmdCheck };
 
 async function main(argv) {
   if (argv.includes("--help") || argv.includes("-h")) {

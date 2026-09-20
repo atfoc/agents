@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 const {
-  formatElement, formatScene, formatViewport, formatSelectionBlock, formatPointBlock, nearest,
+  formatElement, formatScene, formatViewport, formatSelectionBlock, formatPointBlock, formatMarkHandle, nearest,
 } = await import("../lib/format.ts");
 
 /** A plain element; every field the formatter reads has a value. */
@@ -128,4 +128,29 @@ test("nearest reads directions off the dominant axis and honours the radius", ()
 test("the viewport line", () => {
   assert.equal(formatViewport(viewport), "viewport   (320,40 1400×900) zoom 1");
   assert.equal(formatViewport({ ...viewport, zoom: 1.2345 }), "viewport   (320,40 1400×900) zoom 1.23");
+});
+
+test("the handle line names the mark, what is in it and where it came from", () => {
+  assert.equal(
+    formatMarkHandle({ kind: "selection", id: "xlm_7f3a9c2b", file: "arch.excalidraw", rev: 14, count: 3 }),
+    "@excalidraw selection xlm_7f3a9c2b — 3 elements in arch.excalidraw (rev 14)",
+  );
+  assert.equal(
+    formatMarkHandle({ kind: "point", id: "xlm_7f3a9c2b", file: "arch.excalidraw", rev: 14, point: [1240.4, 380.6] }),
+    "@excalidraw point xlm_7f3a9c2b — (1240,381) in arch.excalidraw (rev 14)",
+  );
+});
+
+test("one selected element is not pluralised, and the line stays a single line", () => {
+  const line = formatMarkHandle({ kind: "selection", id: "xlm_00000001", file: "a.excalidraw", rev: 1, count: 1 });
+  assert.ok(line.includes("1 element in"), line);
+  assert.equal(line.split("\n").length, 1);
+});
+
+test("a handle starts with the same @excalidraw marker the blocks do", () => {
+  // The skill triggers on the paste, so the first two words have to be stable.
+  for (const kind of ["selection", "point"]) {
+    const line = formatMarkHandle({ kind, id: "xlm_abcdef12", file: "a.excalidraw", rev: 2, count: 0, point: [0, 0] });
+    assert.ok(line.startsWith(`@excalidraw ${kind} xlm_abcdef12 `), line);
+  }
 });

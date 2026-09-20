@@ -13,9 +13,29 @@ import { createEngine, type Change, type EngineDeps, type Mode, type Notice } fr
 import { RpcError, type El } from "./apply.ts";
 import { Tab, type Rect } from "./ui.tsx";
 import { installShortcuts } from "./clipboard.ts";
+import type { MarkInput } from "../lib/marks.ts";
 
 const token = new URLSearchParams(location.hash.slice(1)).get("token") ?? "";
 const rid = () => Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 6);
+
+/**
+ * Hand a ⌘K / ⌘⇧K mark to the session server and take back its id. Never
+ * throws: the shortcut falls back to a plain-text copy when there is no id.
+ */
+async function saveMark(mark: MarkInput): Promise<string | null> {
+  try {
+    const r = await fetch("/mark", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify(mark),
+    });
+    const out = await r.json();
+    return out?.ok ? String(out.id) : null;
+  } catch (e) {
+    console.error("could not store the mark:", e);
+    return null;
+  }
+}
 
 function App() {
   const [api, setApi] = useState<any>(null);
@@ -142,6 +162,7 @@ function App() {
       rev: () => st.current.rev,
       pointer: () => pointer.current,
       enabled: () => mode === "shared" && st.current.role === "engine",
+      save: saveMark,
       toast: (text) => setToast(text),
       crosshair: (p) => setCrosshair(p),
     });
