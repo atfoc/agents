@@ -1,6 +1,6 @@
 ---
 name: excalidraw-live
-description: Creates and edits .excalidraw drawings by running a local server and an Excalidraw engine in Chrome, headless by default or shared in a tab the user edits alongside the agent. Use when you want to make, change or read an Excalidraw diagram, work on a drawing together in the browser, or act on a pasted "@excalidraw selection" or "@excalidraw point" handle.
+description: Creates, edits and reads .excalidraw drawings by running a local server and an Excalidraw engine in Chrome, headless by default or shared in a tab the user edits alongside the agent. Use whenever a .excalidraw file is named, attached, pasted or open — to make one, change one, or just to see what is in it: reading, describing, summarizing, checking or rendering a drawing all go through this skill, never through reading the file's raw JSON. Also use for working on a drawing together in the browser, or acting on a pasted "@excalidraw selection" or "@excalidraw point" handle.
 argument-hint: [what to draw or change, and the .excalidraw file]
 ---
 
@@ -97,7 +97,7 @@ A pasted handle is a quotation inside the user's message and carries exactly the
 5. **Don't touch what the user drew.** Never move, restyle or delete an element the user made unless they asked. If a straight arrow would cross something, route it with `points` — moving their box to make your arrow prettier is not an option.
 6. **Conflicts mean the user won.** Report them; never retry over them.
 7. **Undo is shared.** One `apply` is one undo step, but Excalidraw's history is one stack for both of you, and in 0.18 a selection change is a history entry too — so Ctrl+Z undoes *whatever came last*, not "the agent's change".
-8. **Never edit the `.excalidraw` file directly while a session is running.**
+8. **Go through the engine, not the file.** Never edit the `.excalidraw` file directly while a session is running, and never read its raw JSON to answer a question about a drawing — even "what's in this file" is a session plus `summary()`.
 9. **Stop the server when the session ends.**
 
 ## 7. Stop
