@@ -1,6 +1,6 @@
 ---
 name: manage-linear-tasks
-description: Creates, reads, updates, blocks, tags and completes Linear issues and sub-issues as tasks, and writes, links and reads Linear documents attached to them, through a bundled script. Use when you want to create Linear tasks or subtasks, list startable or pending Linear issues, complete or block a Linear task, or attach a document to a Linear issue.
+description: Creates, reads, updates, blocks, tags and completes Linear issues and sub-issues as tasks, writes, links and reads Linear documents attached to them, and uploads files of any type — Word, PDF, images, spreadsheets — as attachments, through a bundled script. Use when you want to create Linear tasks or subtasks, list startable or pending Linear issues, complete or block a Linear task, or attach a document or a file to a Linear issue.
 argument-hint: [what to do, with a team key and optional project, or a parent issue id]
 ---
 
@@ -10,10 +10,10 @@ Act on the request in `$ARGUMENTS`, or the Linear work named earlier in the conv
 
 ## Access
 
-1. Every read and every write of Linear, issues and documents alike, goes through `${CLAUDE_SKILL_DIR}/scripts/linear.py`. Never reach Linear any other way — no other API calls, no MCP servers, no browser.
+1. Every read and every write of Linear — issues, documents and files alike — goes through `${CLAUDE_SKILL_DIR}/scripts/linear.py`. Never reach Linear any other way — no other API calls, no MCP servers, no browser.
 2. `SCRIPT` below and in `references/` stands for `python3 ${CLAUDE_SKILL_DIR}/scripts/linear.py`, written out as that literal absolute path. Use the literal path in every command, including any command you hand to someone else: no shell variables, nothing relative to a working directory. The script needs only Python 3. Run it; do not read it for information.
 3. The script reads a Linear personal API key from `LINEAR_API_KEY`. When a command fails with `LINEAR_API_KEY is not set`, report that the user must create a key in Linear under Settings → Security & access → Personal API keys and export it in the environment the script runs in, then stop. Never ask for the key in the conversation, and never write it into a file or a command line.
-4. Pass bodies and document content on stdin with a quoted heredoc, such as `SCRIPT update --id ENG-1 <<'EOF'` … `EOF`. Empty stdin fails.
+4. Pass bodies and document content on stdin with a quoted heredoc, such as `SCRIPT update --id ENG-1 <<'EOF'` … `EOF`. Empty stdin fails. Files are the exception: they are given as a path with `--file`, never on stdin.
 
 ## Markdown that Linear rewrites
 
@@ -27,6 +27,7 @@ Before sending any body or document content to Linear — `create`, `update`, an
 - **Team** — its key, such as `ENG`. `SCRIPT teams` lists every team's key and name.
 - **Project** — its name, case-insensitive, or its id. `SCRIPT projects --team <key>` lists a team's projects. A name shared by two projects fails; give the id.
 - **Document** — its id or its Linear URL.
+- **Attachment** — a file or link on a task, by the `id` that `get` prints for it under `files` or `links`.
 
 ## Output and errors
 
@@ -59,7 +60,7 @@ Rules:
 - **Create a task** — `SCRIPT create --team <key> [--project <project>] --title "<title>" [--blocked-by <id> …] [--tag <tag> …]`, body on stdin; prints the created task with its new id.
 - **Create a subtask** — `SCRIPT create --parent <id> --title "<title>" [--blocked-by <id> …] [--tag <tag> …]`, body on stdin. It takes the parent's team and project. `--team <key>` puts it in another team, without the parent's project; `--project <project>` sets the project.
 - **Make an existing task a subtask** — `SCRIPT set-parent --id <id> --parent <id>`.
-- **One task in full** — `SCRIPT get --id <id>`; the task plus `team`, `project`, `subtasks`, `blocks` (the ids it blocks), `documents` and `links`.
+- **One task in full** — `SCRIPT get --id <id>`; the task plus `team`, `project`, `subtasks`, `blocks` (the ids it blocks), `documents`, `files` and `links`.
 - **Fetch a task's body** — `SCRIPT body --id <id>`. It prints the body alone — no id, title, blockers or status — so it can be given to someone who must see only the body.
 - **Listings** — each takes a scope: `--parent <id>` for that task's direct subtasks, or `--team <key> [--project <project>]`.
   - All tasks — `SCRIPT list <scope>`. An empty scope prints `[]`.
@@ -74,6 +75,17 @@ Rules:
 
 ## Documents
 
-When the request writes, attaches, links or reads a Linear document on a task or in a project, read `${CLAUDE_SKILL_DIR}/references/documents.md` and follow it.
+Markdown belongs in a Linear document: a title and markdown content, living on a task or in a project, readable and editable in Linear. When the request writes, attaches, links or reads a Linear document on a task or in a project, read `${CLAUDE_SKILL_DIR}/references/documents.md` and follow it.
+
+## Files and links
+
+Anything that is not markdown — a Word document, a PDF, an image, a spreadsheet, a CSV, a zip, a log — goes on a task as a file attachment, uploaded to Linear. Write markdown as a document instead; reach for a file only when the content is already a file of another kind, or the user asked for that format.
+
+- **Attach a file** — `SCRIPT attach --id <id> --file <path> [--title "<title>"]`; uploads the file and attaches it to the task. The title defaults to the file's name, and Linear shows its type and size underneath. Give the path of a file that already exists. Each run uploads anew, so attaching the same path twice leaves two attachments.
+- **Attach a link** — `SCRIPT attach --id <id> --url <url> [--title "<title>"]`; a url the task already links is returned unchanged. Give exactly one of `--file` or `--url`.
+- **A task's files and links** — `SCRIPT get --id <id>`: `files` for the uploaded files, `links` for the urls, Linear documents linked with `doc-link` among them. Each prints `id`, `title`, `subtitle` and `url`; that `id` is what `attach-download` and `detach` take.
+- **One attachment's details** — `SCRIPT attach-get --attachment <id>`; the same fields plus `issue` and `file`, which is `true` for an uploaded file.
+- **Download a file** — `SCRIPT attach-download --attachment <id> --out <path>`; writes the file and prints where it landed. `--out` may be a directory, and the file is named after the attachment there. It fails on a link, which has nothing to download.
+- **Remove a file or a link** — `SCRIPT detach --attachment <id>`; prints the task in full. It never touches the task's documents.
 
 The skill is finished when the requested Linear operations have run and their results, or the error that stopped them, are reported. Stop there.

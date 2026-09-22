@@ -1,6 +1,6 @@
 # Linear documents
 
-A document is a Linear document: a title and markdown content. It lives on one issue or in one project. `SCRIPT`, referring to tasks, projects and documents, and handling errors are defined in `SKILL.md`.
+A document is a Linear document: a title and markdown content. It lives on one issue or in one project. Content that is not markdown — a Word document, a PDF, an image — is not a document but a file attachment, covered in `SKILL.md`. `SCRIPT`, referring to tasks, projects and documents, and handling errors are defined in `SKILL.md`.
 
 ## Attaching a document to a task
 
@@ -16,7 +16,7 @@ Every command that returns a document prints `id`, `title`, `url`, `issue` (the 
 - **Create a document on a task** — `SCRIPT doc-create --issue <id> --title "<title>"`, content on stdin.
 - **Create a document in a project** — `SCRIPT doc-create --project <project> [--team <key>] --title "<title>"`, content on stdin. `--team` narrows a project name that more than one team can see. Give exactly one of `--issue` or `--project`.
 - **Link a document to a task** — `SCRIPT doc-link --doc <document> --issue <id>`; prints the task in full. Linking a document the task already links is skipped.
-- **A task's documents** — `SCRIPT get --id <id>`: `documents` for the ones on it, `links` for everything linked to it, documents and other links alike.
+- **A task's documents** — `SCRIPT get --id <id>`: `documents` for the ones on it, `links` for every url linked to it, linked documents among them. Uploaded files are listed apart, under `files`; `SKILL.md` covers them.
 - **A document's details** — `SCRIPT doc-get --doc <document>`.
 - **Fetch a document's content** — `SCRIPT doc-content --doc <document>`; prints the markdown alone.
 - **Replace a document's content** — `SCRIPT doc-update --doc <document> [--title "<title>"]`, the full new content on stdin. It replaces, never appends: to add to a document, fetch its content, then write back the whole of it.

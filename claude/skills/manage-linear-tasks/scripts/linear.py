@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Manage Linear issues as tasks, and Linear documents attached to them.
+"""Manage Linear issues as tasks, and the documents and files attached to them.
 
 Every read and every write of Linear goes through this script. Standard library only.
 """
 
 import argparse
 import json
+import mimetypes
 import os
 import re
 import sys
@@ -17,9 +18,13 @@ KEY_ENV = "LINEAR_API_KEY"
 DONE = "completed"                    # the workflow state type of a completed issue
 CLOSED = ("completed", "canceled")    # state types that are no longer pending
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+UPLOAD_HOST = "uploads.linear.app"    # the host of a file uploaded to Linear, as opposed to a link
+OCTET_STREAM = "application/octet-stream"
 
 
 # --- queries ---------------------------------------------------------------
+
+ATTACHMENT_FIELDS = "id title subtitle url"
 
 ISSUE_LIST_FIELDS = """
   id identifier title url
@@ -36,7 +41,7 @@ ISSUE_FIELDS = ISSUE_LIST_FIELDS + """
   children(first: 100) { nodes { identifier } }
   relations(first: 50) { nodes { id type relatedIssue { identifier } } }
   documents(first: 50) { nodes { id title url } }
-  attachments(first: 50) { nodes { title url } }
+  attachments(first: 50) { nodes { """ + ATTACHMENT_FIELDS + """ } }
 """
 
 DOCUMENT_FIELDS = "id title url slugId content issue { identifier } project { id name }"
@@ -70,6 +75,9 @@ LABEL_FIND_Q = """query LabelFind($filter: IssueLabelFilter) {
 
 DOCUMENT_GET_Q = "query DocumentGet($id: String!) { document(id: $id) { " + DOCUMENT_FIELDS + " } }"
 
+ATTACHMENT_GET_Q = ("query AttachmentGet($id: String!) { attachment(id: $id) { "
+                    + ATTACHMENT_FIELDS + " issue { identifier } } }")
+
 ISSUE_CREATE_M = """mutation IssueCreate($input: IssueCreateInput!) {
   issueCreate(input: $input) { issue { id identifier } }
 }"""
@@ -100,6 +108,20 @@ DOCUMENT_UPDATE_M = """mutation DocumentUpdate($id: String!, $input: DocumentUpd
 
 ATTACHMENT_LINK_M = """mutation AttachmentLink($issueId: String!, $url: String!, $title: String) {
   attachmentLinkURL(issueId: $issueId, url: $url, title: $title) { attachment { id url } }
+}"""
+
+FILE_UPLOAD_M = """mutation FileUpload($contentType: String!, $filename: String!, $size: Int!) {
+  fileUpload(contentType: $contentType, filename: $filename, size: $size) {
+    uploadFile { uploadUrl assetUrl headers { key value } }
+  }
+}"""
+
+ATTACHMENT_CREATE_M = """mutation AttachmentCreate($input: AttachmentCreateInput!) {
+  attachmentCreate(input: $input) { attachment { """ + ATTACHMENT_FIELDS + """ } }
+}"""
+
+ATTACHMENT_DELETE_M = """mutation AttachmentDelete($id: String!) {
+  attachmentDelete(id: $id) { success }
 }"""
 
 
@@ -177,6 +199,76 @@ def document_ref(ref):
     return ref
 
 
+def is_file(attachment):
+    """True for an attachment whose url is a file uploaded to Linear, not a link elsewhere."""
+    return UPLOAD_HOST in attachment["url"]
+
+
+def human_size(count):
+    size = float(count)
+    for unit in ("B", "KB", "MB"):
+        if size < 1024:
+            return ("%d %s" if unit == "B" else "%.1f %s") % (size, unit)
+        size /= 1024
+    return "%.1f GB" % size
+
+
+def content_type_of(filename):
+    return mimetypes.guess_type(filename)[0] or OCTET_STREAM
+
+
+def upload_asset(path):
+    """Uploads a local file to Linear's file storage; returns its asset url, name, type and size."""
+    if not os.path.isfile(path):
+        die("no such file: " + path)
+    try:
+        with open(path, "rb") as handle:
+            data = handle.read()
+    except OSError as err:
+        die("cannot read " + path + ": " + str(err))
+    if not data:
+        die("file is empty: " + path)
+    filename = os.path.basename(path)
+    content_type = content_type_of(filename)
+    upload = send(FILE_UPLOAD_M, {
+        "contentType": content_type, "filename": filename, "size": len(data),
+    })["fileUpload"]["uploadFile"]
+    # Linear's storage rejects the PUT unless every header it handed back is sent with it.
+    headers = {header["key"]: header["value"] for header in upload["headers"]}
+    headers["Content-Type"] = content_type
+    headers.setdefault("Cache-Control", "public, max-age=31536000")
+    request = urllib.request.Request(upload["uploadUrl"], data=data, headers=headers, method="PUT")
+    try:
+        urllib.request.urlopen(request, timeout=300).close()
+    except urllib.error.HTTPError as err:
+        die("uploading " + filename + " failed: HTTP " + str(err.code) + " "
+            + err.read().decode("utf-8", "replace")[:200])
+    except urllib.error.URLError as err:
+        die("cannot reach Linear's file storage: " + str(err.reason))
+    return upload["assetUrl"], filename, content_type, len(data)
+
+
+def download_asset(url, path):
+    """Writes an uploaded file back to a local path; the asset url needs the API key to read."""
+    key = os.environ.get(KEY_ENV, "").strip()
+    if key == "":
+        die(KEY_ENV + " is not set")
+    request = urllib.request.Request(url, headers={"Authorization": key})
+    try:
+        with urllib.request.urlopen(request, timeout=300) as response:
+            data = response.read()
+    except urllib.error.HTTPError as err:
+        die("downloading the file failed: HTTP " + str(err.code))
+    except urllib.error.URLError as err:
+        die("cannot reach Linear's file storage: " + str(err.reason))
+    try:
+        with open(path, "wb") as handle:
+            handle.write(data)
+    except OSError as err:
+        die("cannot write " + path + ": " + str(err))
+    return len(data)
+
+
 def fetch_issue(ref):
     return send(ISSUE_GET_Q, {"id": ref.strip()})["issue"]
 
@@ -241,8 +333,19 @@ def detail(issue):
                      for r in nodes(issue["relations"]) if r["type"] == "blocks"]
     out["documents"] = [{"id": d["id"], "title": d["title"], "url": d["url"]}
                         for d in nodes(issue["documents"])]
-    out["links"] = [{"title": a["title"], "url": a["url"]} for a in nodes(issue["attachments"])]
+    attachments = nodes(issue["attachments"])
+    out["files"] = [public_attachment(a) for a in attachments if is_file(a)]
+    out["links"] = [public_attachment(a) for a in attachments if not is_file(a)]
     return out
+
+
+def public_attachment(attachment):
+    return {
+        "id": attachment["id"],
+        "title": attachment["title"],
+        "subtitle": attachment.get("subtitle"),
+        "url": attachment["url"],
+    }
 
 
 def public_document(document):
@@ -558,6 +661,79 @@ def cmd_doc_link(args):
     return 0
 
 
+# --- file and link commands ------------------------------------------------
+
+
+def fetch_attachment(ref):
+    attachment = send(ATTACHMENT_GET_Q, {"id": ref.strip()})["attachment"]
+    if attachment is None:
+        die("unknown attachment: " + ref)
+    return attachment
+
+
+def cmd_attach(args):
+    if bool(args.file) == bool(args.url):
+        die("give exactly one of --file or --url")
+    issue = fetch_issue(args.id)
+    title = args.title.strip() if args.title else ""
+    if args.file:
+        asset_url, filename, content_type, size = upload_asset(args.file)
+        created = send(ATTACHMENT_CREATE_M, {"input": {
+            "issueId": issue["id"],
+            "title": title or filename,
+            "subtitle": content_type + ", " + human_size(size),
+            "url": asset_url,
+        }})["attachmentCreate"]["attachment"]
+        print_json(public_attachment(created))
+        return 0
+    url = args.url.strip()
+    existing = [a for a in nodes(issue["attachments"]) if a["url"] == url]
+    if not existing:
+        # Without a title Linear titles the link itself, from the page it points at.
+        send(ATTACHMENT_LINK_M, {"issueId": issue["id"], "url": url, "title": title or None})
+        existing = [a for a in nodes(fetch_issue(issue["id"])["attachments"]) if a["url"] == url]
+    if not existing:
+        die("Linear linked " + url + " to " + issue["identifier"] + " under another url; "
+            + "run get --id " + issue["identifier"] + " to see it")
+    print_json(public_attachment(existing[0]))
+    return 0
+
+
+def cmd_attach_get(args):
+    attachment = fetch_attachment(args.attachment)
+    out = public_attachment(attachment)
+    out["issue"] = attachment["issue"]["identifier"] if attachment["issue"] else None
+    out["file"] = is_file(attachment)
+    print_json(out)
+    return 0
+
+
+def cmd_attach_download(args):
+    attachment = fetch_attachment(args.attachment)
+    if not is_file(attachment):
+        die(attachment["title"] + " is a link, not a file uploaded to Linear: " + attachment["url"])
+    path = args.out
+    if os.path.isdir(path):
+        path = os.path.join(path, os.path.basename(attachment["title"].strip()) or "attachment")
+    size = download_asset(attachment["url"], path)
+    out = public_attachment(attachment)
+    out["path"] = os.path.abspath(path)
+    out["bytes"] = size
+    print_json(out)
+    return 0
+
+
+def cmd_detach(args):
+    attachment = fetch_attachment(args.attachment)
+    issue = attachment["issue"]
+    send(ATTACHMENT_DELETE_M, {"id": attachment["id"]})
+    if not issue:
+        print_json(public_attachment(attachment))
+        return 0
+    print_json(detail(fetch_issue(issue["identifier"])))
+    return 0
+
+
 # --- wiring ----------------------------------------------------------------
 
 
@@ -659,6 +835,26 @@ def build_parser():
     p.add_argument("--doc", required=True)
     p.add_argument("--issue", required=True)
     p.set_defaults(func=cmd_doc_link)
+
+    p = sub.add_parser("attach")
+    p.add_argument("--id", required=True)
+    p.add_argument("--file")
+    p.add_argument("--url")
+    p.add_argument("--title")
+    p.set_defaults(func=cmd_attach)
+
+    p = sub.add_parser("attach-get")
+    p.add_argument("--attachment", required=True)
+    p.set_defaults(func=cmd_attach_get)
+
+    p = sub.add_parser("attach-download")
+    p.add_argument("--attachment", required=True)
+    p.add_argument("--out", required=True)
+    p.set_defaults(func=cmd_attach_download)
+
+    p = sub.add_parser("detach")
+    p.add_argument("--attachment", required=True)
+    p.set_defaults(func=cmd_detach)
 
     return parser
 
