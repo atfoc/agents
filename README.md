@@ -12,7 +12,6 @@ claude/            Skills and agents in Claude Code format
   skills/          Skills (one directory each, with a SKILL.md)
 cursor/            The same skills and agents, ported to Cursor format
 ai-config-manager/ Go CLI that installs the above into ~/.claude or ~/.cursor
-docs/              The working knowledge the skills are built from
 .claude/skills/    Skills for working on this repo itself
 ```
 
@@ -85,7 +84,6 @@ Used by the pipeline above to read and write tasks, and usable on their own.
 | --- | --- |
 | `generate-image` | Generates images from a text description via OpenRouter, optionally from reference images or with a transparent background. Needs `OPENROUTER_API_KEY`. |
 | `excalidraw-live` | Creates, edits and reads `.excalidraw` drawings through a real Excalidraw engine in Chrome — headless, or in a browser tab you edit alongside the agent. |
-| `with-docs` | Completes a task by first resolving every convention and procedure it needs from a docs collection like `docs/`. |
 
 ## Agents
 
@@ -106,6 +104,3 @@ Subagents the main agent delegates to, each tuned to one kind of job.
 | `create-skill` | Writes a new skill under `claude/skills/`, then ports it to `cursor/skills/`. |
 | `create-agent` | Writes a new subagent under `claude/agents/`, then ports it to `cursor/agents/`. |
 | `port-claude-skill` | Ports an existing Claude Code skill to Cursor (or refreshes the port). |
-
-`docs/` is the underlying knowledge base — the processes, formats and conventions the skills
-are distilled from. Start at [docs/DOCS.md](docs/DOCS.md).
