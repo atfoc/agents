@@ -19,8 +19,9 @@ The tool copies two kinds of items from `<source>` into `<target>`:
   containing a `SKILL.md` plus any supporting files). Loose files directly
   inside `skills/` are ignored.
 
-Unlike the shell scripts, this tool does not append `.claude` or `.cursor`
-to the target — you pass the full target root yourself, e.g. `-t ~/.claude`.
+The tool is flavor-agnostic and does not append `.claude` or `.cursor` to
+the target — you pass the full target root yourself, e.g. `-t ~/.claude` or
+`-t ~/.cursor`.
 
 ## Build
 
@@ -337,13 +338,3 @@ The tool exits `1` with a fatal error in these cases:
 - A `--install` or `--uninstall` name matched nothing (in the source, or in
   the target, respectively). For `--uninstall`, this is checked for every
   name before anything is deleted, so nothing is removed.
-
-## Relationship to the shell installers
-
-`claude/install-claude-config.sh` and `cursor/install-cursor-config.sh`
-still exist and are not replaced by this tool. Each hardcodes its own
-source and appends `.claude`/`.cursor` to the target. `ai-config-manager`
-is a flavor-agnostic replacement for the same underlying copy logic: point
-it at any `<source>` with `agents/`/`skills/` subdirectories and any
-`<target>`, and it performs the same kind of install for either flavor (or
-any other tree with the same shape).
