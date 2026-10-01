@@ -1,0 +1,3 @@
+interface:
+  display_name: "Port Claude Skill to Codex"
+  short_description: "Adapt Claude Code skill bundles for Codex"
