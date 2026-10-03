@@ -1,8 +1,7 @@
 # agents
 
 A personal collection of **skills** and **subagents** for AI coding agents, kept in one place and
-shipped for [Claude Code](https://claude.com/claude-code), [Cursor](https://cursor.com), and
-[Codex](https://learn.chatgpt.com/docs/build-skills). The Codex collection contains skills.
+shipped in two flavors: [Claude Code](https://claude.com/claude-code) and [Cursor](https://cursor.com).
 It also includes **ai-config-manager**, a small CLI that installs them into your config directory.
 
 ## Layout
@@ -12,19 +11,16 @@ claude/            Skills and agents in Claude Code format
   agents/          Subagent definitions (one .md file each)
   skills/          Skills (one directory each, with a SKILL.md)
 cursor/            The same skills and agents, ported to Cursor format
-codex/skills/      Claude skills ported to Codex
-ai-config-manager/ Go CLI that installs the above into an agent's config directory
+ai-config-manager/ Go CLI that installs the above into ~/.claude or ~/.cursor
 .claude/skills/    Skills for working on this repo itself
-.agents/skills/   Codex skills for working on this repo itself
 ```
 
 `claude/` is the source of truth. Every skill and agent there has a Cursor port under `cursor/`
-with the same name. Skills also have Codex ports under `codex/skills/`.
+with the same name.
 
 ## ai-config-manager
 
 Claude Code and Cursor pick up skills and agents from `~/.claude` and `~/.cursor`.
-Codex discovers user skills under `~/.agents/skills/`.
 `ai-config-manager` copies them there from this repo — and removes ones you no longer want —
 so you don't have to do it by hand.
 
@@ -47,9 +43,6 @@ go build -o ai-config-manager .
 
 # Same for Cursor
 ./ai-config-manager -s ../cursor -t ~/.cursor
-
-# Install the Codex skills
-./ai-config-manager -s ../codex -t ~/.agents
 ```
 
 Requires Go 1.25+. See [ai-config-manager/README.md](ai-config-manager/README.md) for every
@@ -111,24 +104,3 @@ Subagents the main agent delegates to, each tuned to one kind of job.
 | `create-skill` | Writes a new skill under `claude/skills/`, then ports it to `cursor/skills/`. |
 | `create-agent` | Writes a new subagent under `claude/agents/`, then ports it to `cursor/agents/`. |
 | `port-claude-skill` | Ports an existing Claude Code skill to Cursor (or refreshes the port). |
-
-`.agents/skills/` holds project-local Codex maintenance skills:
-
-| Skill | What it does |
-| --- | --- |
-| `port-claude-skill-to-codex` | Checks Claude skill compatibility and creates or refreshes a Codex port, adapting metadata, inputs, paths, tools, and supporting files while preserving the workflow. |
-
-Invoke it in Codex with a skill name or source folder, for example:
-
-```text
-$port-claude-skill-to-codex define-feature
-```
-
-By default, it reads `claude/skills/<name>/` and writes `codex/skills/<name>/`. Those
-ports belong to the collection; Codex discovers project skills under `.agents/skills/`
-and user skills under `~/.agents/skills/`. Request installation or a discovery symlink
-separately when you want to use a port.
-
-Claude and Codex share the core `SKILL.md` format, but Claude-specific runtime features
-need adaptation. The porting skill's [compatibility map](.agents/skills/port-claude-skill-to-codex/references/compatibility.md)
-documents the mappings and links to the official specifications.
