@@ -1,0 +1,772 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>autobuild</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #fcfcfb; --panel: #ffffff; --panel2: #f3f3ef; --line: #e2e1da;
+  --text: #0b0b0b; --text2: #52514e; --muted: #8b8a80;
+  --blue: #2a78d6; --violet: #4a3aa7; --orange: #eb6834; --aqua: #1baf7a;
+  --good: #0ca30c; --warn: #fab219; --serious: #ec835a; --crit: #d03b3b;
+  --add: rgba(12, 163, 12, .14); --rm: rgba(208, 59, 59, .14);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1a19; --panel: #222220; --panel2: #2a2a27; --line: #3a3a35;
+    --text: #ffffff; --text2: #c3c2b7; --muted: #8b8a80;
+    --blue: #3987e5; --violet: #9085e9; --orange: #d95926; --aqua: #199e70;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  display: flex; flex-direction: column; }
+code, pre, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+pre { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; overflow: auto;
+  white-space: pre-wrap; word-break: break-word; margin: 6px 0; }
+code { background: var(--panel2); border-radius: 4px; padding: 1px 4px; }
+a { color: var(--blue); }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
+
+/* header */
+#top { display: flex; align-items: center; gap: 18px; padding: 10px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+#top h1 { font-size: 15px; margin: 0; font-weight: 650; }
+.pill { display: flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--text2); }
+.stats { display: flex; gap: 18px; margin-left: auto; }
+.stat { text-align: right; }
+.stat b { display: block; font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.stat > span { color: var(--text2); font-size: 11px; }
+.banner { width: 100%; padding: 6px 10px; border-radius: 6px; background: var(--panel2); border: 1px solid var(--line); }
+
+/* status marks: a colored dot or glyph beside a text label, never color alone */
+.st { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.st i { width: 14px; height: 14px; border-radius: 50%; display: inline-grid; place-items: center; font-style: normal;
+  font-size: 10px; font-weight: 700; color: #fff; background: var(--c, var(--muted)); flex: none; }
+.st.live i { animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+.c-waiting, .c-queued, .c-held, .c-paused, .c-pending, .c-interrupted, .c-cancelled { --c: var(--muted); }
+.c-running { --c: var(--blue); }
+.c-merging { --c: var(--aqua); }
+.c-done, .c-completed, .c-achieved { --c: var(--good); }
+.c-failed, .c-error { --c: var(--crit); }
+.c-blocked, .c-stalled, .c-gave_up, .c-not_achieved { --c: var(--serious); }
+
+/* tabs */
+#tabs { display: flex; gap: 2px; padding: 0 12px; border-bottom: 1px solid var(--line); }
+#tabs button { padding: 8px 12px; color: var(--text2); border-bottom: 2px solid transparent; }
+#tabs button.on { color: var(--text); border-color: var(--text); font-weight: 600; }
+.count { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+main { flex: 1; display: flex; min-height: 0; }
+#view { flex: 1; overflow: auto; min-width: 0; }
+#drawer { width: 46%; min-width: 420px; max-width: 900px; border-left: 1px solid var(--line); background: var(--panel);
+  display: flex; flex-direction: column; min-height: 0; }
+#drawer.wide { width: 78%; max-width: none; }
+#drawer[hidden] { display: none; }
+.pad { padding: 16px; }
+
+/* the orchestrator's turns, as a strip above the graph */
+.strip { display: flex; align-items: stretch; gap: 6px; padding: 12px 20px 4px; overflow-x: auto; }
+.strip .lbl { color: var(--text2); font-size: 11.5px; align-self: center; white-space: nowrap; margin-right: 4px; }
+.tchip { flex: none; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 4px 9px; text-align: left;
+  display: flex; flex-direction: column; gap: 1px; min-width: 74px; }
+.tchip:hover, .tchip.sel { border-color: var(--text2); }
+.tchip.sel { box-shadow: 0 0 0 2px var(--text2); }
+.tchip .n { font-weight: 700; font-size: 12px; display: flex; gap: 6px; align-items: center; }
+.tchip .why { color: var(--text2); font-size: 11px; white-space: nowrap; }
+.tchip .did { font-size: 11px; font-weight: 650; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tchip.ghost { border-style: dashed; color: var(--muted); justify-content: center; background: none; cursor: default; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--muted)); flex: none; }
+.dot.live { animation: pulse 1.4s ease-in-out infinite; }
+.arrow { align-self: center; color: var(--muted); flex: none; }
+
+/* graph */
+#graph { position: relative; margin: 20px; }
+#graph svg { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.edge { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 4; opacity: .7; }
+.edge.met { stroke: var(--text2); stroke-dasharray: none; }
+#graph.focus .edge { opacity: .12; }
+#graph.focus .edge.hl { opacity: 1; stroke: var(--text); stroke-width: 2; }
+.node { position: absolute; width: 236px; height: 96px; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--c, var(--muted)); border-radius: 8px; padding: 7px 10px; text-align: left; display: flex;
+  flex-direction: column; gap: 3px; overflow: hidden; }
+.node:hover, .node.sel { border-color: var(--text2); border-left-color: var(--c, var(--muted)); }
+.node.sel { box-shadow: 0 0 0 2px var(--text2); }
+.node.c-waiting, .node.c-held, .node.c-blocked { border-style: dashed; border-left-style: solid; }
+.node.c-cancelled { opacity: .6; }
+.node.c-cancelled .ti { text-decoration: line-through; }
+#graph.focus .node:not(.rel) { opacity: .35; }
+#graph.turnsel .node:not(.touched) { opacity: .35; }
+#graph.turnsel .node.touched { box-shadow: 0 0 0 2px var(--text2); }
+.node .hd { display: flex; gap: 6px; align-items: center; }
+.node .id { font-weight: 700; font-size: 12px; }
+.node .by { margin-left: auto; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.node .ti { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.25; }
+.node .ft { margin-top: auto; display: flex; align-items: center; gap: 8px; color: var(--text2); font-size: 11.5px; overflow: hidden; }
+.node .ft .st { overflow: hidden; text-overflow: ellipsis; }
+.node .ft .cost { margin-left: auto; font-variant-numeric: tabular-nums; }
+.tag { font-size: 10.5px; font-weight: 650; padding: 0 5px; border-radius: 4px; border: 1px solid var(--line); color: var(--text2);
+  line-height: 16px; white-space: nowrap; }
+.tag.op { border-color: var(--text2); color: var(--text); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; padding: 8px 20px 0; color: var(--text2); font-size: 12px; }
+.hint { color: var(--muted); }
+
+/* tables and lists */
+table { border-collapse: collapse; width: 100%; }
+th { text-align: left; font-weight: 600; color: var(--text2); font-size: 11.5px; padding: 6px 10px; border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; background: var(--bg); }
+td { padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr.row { cursor: pointer; }
+tr.row:hover td, tr.row.sel td { background: var(--panel2); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.filters { display: flex; gap: 6px; padding: 10px 12px; flex-wrap: wrap; }
+.chip { padding: 2px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--text2); }
+.chip.on { color: var(--text); border-color: var(--text2); background: var(--panel2); }
+
+/* drawer */
+.dh { padding: 12px 16px 0; border-bottom: 1px solid var(--line); }
+.dh:empty { display: none; }
+.dh .crumbs { display: flex; gap: 6px; align-items: center; color: var(--text2); margin-bottom: 4px; }
+.dh .crumbs button { color: var(--blue); }
+.dh .tools { margin-left: auto; display: flex; gap: 10px; }
+.dh h2 { margin: 0 0 6px; font-size: 15px; }
+.dh .meta { display: flex; gap: 14px; flex-wrap: wrap; color: var(--text2); padding-bottom: 8px; }
+.dtabs { display: flex; gap: 2px; }
+.dtabs button { padding: 6px 10px; color: var(--text2); border-bottom: 2px solid transparent; }
+.dtabs button.on { color: var(--text); border-color: var(--text); font-weight: 600; }
+.db { flex: 1; overflow: auto; padding: 14px 16px; min-height: 0; }
+.kv { display: grid; grid-template-columns: 110px 1fr; gap: 4px 10px; margin-bottom: 14px; }
+.kv dt { color: var(--text2); } .kv dd { margin: 0; word-break: break-word; }
+h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text2); margin: 18px 0 8px; }
+.pipe { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.pipe .prow { display: flex; gap: 10px; align-items: center; padding: 7px 10px; border-bottom: 1px solid var(--line); width: 100%; text-align: left; }
+.pipe .prow:last-child { border-bottom: 0; }
+.pipe .prow:hover { background: var(--panel2); }
+.pipe .prow .nm { font-weight: 600; min-width: 92px; }
+.pipe .prow .rt { margin-left: auto; color: var(--text2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.linkbtn { color: var(--blue); }
+
+/* what a turn did to the run */
+.ops { margin: 6px 0; }
+.opline { display: flex; gap: 8px; padding: 3px 0; align-items: baseline; }
+.opline .k { flex: none; width: 16px; text-align: center; font-weight: 700; color: var(--text2); }
+.opline .x { min-width: 0; }
+.opline.refused, .opline.read { color: var(--text2); }
+.opline .why { color: var(--text2); }
+.card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); margin-bottom: 12px; }
+.card > header { display: flex; gap: 12px; align-items: center; padding: 9px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.card > header .rt { margin-left: auto; color: var(--text2); white-space: nowrap; }
+.card > div { padding: 6px 12px 10px; }
+.card.sel { border-color: var(--text2); }
+.said { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 4px; }
+
+/* markdown */
+.md h1 { font-size: 17px; } .md h2 { font-size: 15px; } .md h3, .md h4 { font-size: 13px; text-transform: none; letter-spacing: 0; color: var(--text); }
+.md h1, .md h2, .md h3, .md h4 { margin: 14px 0 6px; }
+.md p { margin: 6px 0; }
+.md .li { padding: 1px 0; display: flex; gap: 6px; } .md .li > span:first-child { color: var(--text2); flex: none; }
+.md blockquote { margin: 6px 0; padding-left: 10px; border-left: 3px solid var(--line); color: var(--text2); }
+.md table { margin: 8px 0; } .md th { position: static; background: none; }
+.md hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+
+/* transcript */
+.ev { margin: 8px 0; }
+.ev.sub { margin-left: 18px; padding-left: 10px; border-left: 2px solid var(--line); }
+.ev.note { color: var(--muted); font-size: 11.5px; text-align: center; }
+.ev.tool { border: 1px solid var(--line); border-radius: 6px; }
+.ev.tool.run { border-left: 3px solid var(--text2); }
+.ev.tool > summary { padding: 4px 8px; cursor: pointer; display: flex; gap: 8px; }
+.ev.tool > summary b { flex: none; }
+.ev.tool > summary span { color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev.tool > div { padding: 0 8px 6px; }
+.ev.tool pre { max-height: 360px; }
+.ev.tool .err { border-color: var(--crit); }
+.ev.think { color: var(--text2); }
+.ev.final { border-top: 1px solid var(--line); padding-top: 8px; color: var(--text2); }
+pre.diff { white-space: pre; word-break: normal; }
+pre.diff .ad { background: var(--add); display: inline-block; min-width: 100%; }
+pre.diff .rm { background: var(--rm); display: inline-block; min-width: 100%; }
+pre.diff .fh { font-weight: 700; } pre.diff .hh { color: var(--text2); }
+.empty { color: var(--muted); padding: 24px; text-align: center; }
+</style>
+</head>
+<body>
+<header id="top"></header>
+<nav id="tabs"></nav>
+<main>
+  <section id="view"></section>
+  <aside id="drawer" hidden><div id="dhead" class="dh"></div><div id="dbody" class="db"></div></aside>
+</main>
+<script>
+const $ = (sel, el = document) => el.querySelector(sel);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const nav = o => `data-nav='${esc(JSON.stringify(o))}'`;
+
+let D = null;                         // the latest /api/state answer
+let plan = {goal: '', briefs: {}}, planKey = '';
+let logText = '';
+let route = Object.fromEntries(new URLSearchParams(location.hash.slice(1)));
+route.view = route.view || 'run';
+const rendered = new Map();           // element -> html it currently shows
+const agentCache = {};                // agent id -> {key, data}
+const briefRev = {};                  // task id -> the revision of its brief being shown, when not the latest
+let tx = null;                        // the open transcript: {id, next, tools, busy}
+let agentFilter = 'all';
+let bodyKey = '';
+
+function setHTML(el, html) {
+  if (rendered.get(el) === html) return false;
+  rendered.set(el, html);
+  el.innerHTML = html;
+  return true;
+}
+function go(patch) {
+  route = {...route, ...patch};
+  for (const k of Object.keys(route)) if (route[k] == null || route[k] === '') delete route[k];
+  history.replaceState(null, '', '#' + new URLSearchParams(route));
+  render();
+}
+
+// ---------------------------------------------------------------- formatting
+
+const GLYPH = {done: '✓', completed: '✓', achieved: '✓', failed: '✕', error: '✕', blocked: '!', stalled: '!', gave_up: '!',
+  not_achieved: '!', paused: 'Ⅱ', interrupted: 'Ⅱ', cancelled: '–', held: '…'};
+const LIVE = new Set(['running', 'merging']);
+function mark(status, label) {
+  return `<span class="st c-${esc(status)} ${LIVE.has(status) ? 'live' : ''}"><i>${GLYPH[status] || ''}</i>${esc(label ?? status.replace('_', ' '))}</span>`;
+}
+function dur(sec) {
+  sec = Math.max(0, Math.round(sec || 0));
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  return h ? `${h}h ${String(m).padStart(2, '0')}m` : m ? `${m}m ${String(s).padStart(2, '0')}s` : `${s}s`;
+}
+const money = v => '$' + (v || 0).toFixed(2);
+const clock = ts => ts ? new Date(ts * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : '';
+// elapsed time is filled in by tick(), so a running clock does not force a re-render
+const elapsed = (from, to) => from ? `<span class="el" data-from="${from}" data-to="${to || ''}"></span>` : '';
+function tick() {
+  const t = Date.now() / 1000;
+  for (const el of document.querySelectorAll('.el')) {
+    const txt = dur((+el.dataset.to || t) - +el.dataset.from);
+    if (el.textContent !== txt) el.textContent = txt;
+  }
+}
+setInterval(tick, 1000);
+
+function md(src) {
+  const lines = String(src || '').replace(/\r/g, '').split('\n'), out = [];
+  const inline = t => esc(t)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+    .replace(/(^|[\s(])\*([^*\s][^*]*)\*(?=[\s).,;:!?]|$)/g, '$1<i>$2</i>')
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  const isList = l => /^\s*([-*+]|\d+[.)])\s+/.test(l);
+  const cells = l => l.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+  let i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (/^\s*```/.test(l)) {
+      const buf = [];
+      for (i++; i < lines.length && !/^\s*```/.test(lines[i]); i++) buf.push(lines[i]);
+      i++;
+      out.push(`<pre>${esc(buf.join('\n'))}</pre>`);
+    } else if (/^#{1,6}\s/.test(l)) {
+      const n = Math.min(4, l.match(/^#+/)[0].length);
+      out.push(`<h${n}>${inline(l.replace(/^#+\s*/, ''))}</h${n}>`); i++;
+    } else if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(l)) {
+      out.push('<hr>'); i++;
+    } else if (/^\s*\|.*\|\s*$/.test(l) && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1] || '') && (lines[i + 1] || '').includes('-')) {
+      const head = cells(l), rows = [];
+      for (i += 2; i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i]); i++) rows.push(cells(lines[i]));
+      out.push(`<table><tr>${head.map(c => `<th>${inline(c)}</th>`).join('')}</tr>${rows.map(r => `<tr>${r.map(c => `<td>${inline(c)}</td>`).join('')}</tr>`).join('')}</table>`);
+    } else if (isList(l)) {
+      for (; i < lines.length && (isList(lines[i]) || (/^\s+\S/.test(lines[i]) && !/^\s*```/.test(lines[i]))); i++) {
+        const m = lines[i].match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+        if (!m) { out.push(`<div class="li" style="margin-left:${lines[i].search(/\S/) * 7}px"><span></span><span>${inline(lines[i].trim())}</span></div>`); continue; }
+        const box = m[3].match(/^\[([ xX])\]\s+(.*)$/);
+        const bullet = box ? (box[1] === ' ' ? '☐' : '☑') : /\d/.test(m[2]) ? m[2] : '•';
+        out.push(`<div class="li" style="margin-left:${m[1].length * 7}px"><span>${bullet}</span><span>${inline(box ? box[2] : m[3])}</span></div>`);
+      }
+    } else if (/^>\s?/.test(l)) {
+      const buf = [];
+      for (; i < lines.length && /^>\s?/.test(lines[i]); i++) buf.push(lines[i].replace(/^>\s?/, ''));
+      out.push(`<blockquote>${inline(buf.join(' '))}</blockquote>`);
+    } else if (!l.trim()) {
+      i++;
+    } else {
+      const buf = [];
+      for (; i < lines.length && lines[i].trim() && !/^\s*```/.test(lines[i]) && !/^#{1,6}\s/.test(lines[i]) && !isList(lines[i]) && !/^>\s?/.test(lines[i]); i++) buf.push(lines[i]);
+      out.push(`<p>${buf.map(inline).join('<br>')}</p>`);
+    }
+  }
+  return `<div class="md">${out.join('')}</div>`;
+}
+function diffHTML(text) {
+  return '<pre class="diff">' + text.split('\n').map(l => {
+    const c = l[0] === '+' ? 'ad' : l[0] === '-' ? 'rm' : '';
+    return `<span class="${c}">${esc(l) || ' '}</span>`;
+  }).join('\n') + '</pre>';
+}
+
+// ---------------------------------------------------------------- derived data
+
+const S = () => D.state;
+const T = () => D.state.tasks;
+const runActive = () => S().status === 'running' && D.alive;
+const agentsOf = unit => D.agents.filter(a => a.unit === unit);
+const unitCost = unit => agentsOf(unit).reduce((n, a) => n + (a.cost_usd || 0), 0);
+const READS = new Set(['get_run', 'get_task', 'get_agent']);
+const taskLink = id => `<button class="linkbtn mono" ${nav({task: id, agent: null})}>${esc(id)}</button>`;
+const turnLink = n => `<button class="linkbtn" ${nav({turn: n, task: null, agent: null})}>turn ${n}</button>`;
+const runTurn = () => S().turns.find(t => t.status === 'running');
+
+// What a task is doing, as shown: {status, label}.
+function shown(id) {
+  const t = T()[id], s = t.status;
+  if (s === 'done' || s === 'failed' || s === 'cancelled') return {status: s};
+  if (s === 'pending') {
+    if (t.held) return {status: 'held', label: `starts when turn ${t.held} ends`};
+    const bad = t.depends_on.filter(d => ['failed', 'cancelled'].includes(T()[d].status));
+    if (bad.length) return {status: 'blocked', label: 'blocked by ' + bad.join(', ')};
+    const wait = t.depends_on.filter(d => T()[d].status !== 'done');
+    return wait.length ? {status: 'waiting', label: 'waiting on ' + wait.join(', ')} : {status: 'queued', label: 'ready'};
+  }
+  return runActive() ? {status: s} : {status: 'paused', label: `paused (${s})`};
+}
+const turnShown = t => t.status === 'running' ? (runActive() ? 'running' : 'interrupted') : t.status;
+const agentShown = a => a.status === 'running' ? (runActive() ? 'running' : 'interrupted') : a.status;
+
+// What a turn did, counted, and the tasks it touched: {id: 'added' | 'changed' | 'cancelled' | 'retried'}.
+function turnEffect(t) {
+  const e = {added: 0, changed: 0, cancelled: 0, retried: 0, notes: 0, refused: 0, finished: null, touched: {}};
+  for (const o of t.ops) {
+    if (o.error) { if (!READS.has(o.op)) e.refused++; continue; }
+    const word = {add_task: 'added', update_task: 'changed', cancel_task: 'cancelled', retry_task: 'retried'}[o.op];
+    if (word) { e[word]++; if (e.touched[o.task] !== 'added') e.touched[o.task] = word; }
+    else if (o.op === 'set_notes') e.notes++;
+    else if (o.op === 'finish_run') e.finished = o.outcome;
+  }
+  return e;
+}
+const OPK = {added: '+', changed: '~', cancelled: '✕', retried: '↻'};
+function effectText(e) {
+  const parts = ['added', 'changed', 'retried', 'cancelled'].filter(k => e[k]).map(k => `${OPK[k]}${e[k]}`);
+  if (e.finished) parts.push('■ finished');
+  return parts.join('  ') || (e.notes ? 'notes' : 'no changes');
+}
+function whyShort(t) {
+  if (t.reason === 'start') return 'the goal';
+  const ev = t.events.map(e => `${e.task} ${e.type === 'task_failed' ? '✕' : '✓'}`);
+  const txt = ev.slice(0, 3).join(', ') + (ev.length > 3 ? ` +${ev.length - 3}` : '');
+  return txt || (t.idle ? 'nothing running' : 'run changed');
+}
+
+// ---------------------------------------------------------------- header and tabs
+
+function renderTop() {
+  const s = S(), tasks = Object.values(s.tasks), done = tasks.filter(t => t.status === 'done').length;
+  const open = tasks.filter(t => t.status !== 'cancelled').length;
+  const live = D.agents.filter(a => a.status === 'running').length;
+  const cost = D.agents.reduce((n, a) => n + (a.cost_usd || 0), 0);
+  const status = s.status === 'running' && !D.alive ? 'interrupted' : s.status;
+  const rt = runTurn();
+  let orch = '';
+  if (runActive()) orch = rt ? `<button class="pill" ${nav({turn: rt.n, task: null, agent: null})} title="open this turn">${mark('running', `orchestrator deciding · turn ${rt.n}`)}</button>`
+    : `<span class="pill">${mark('waiting', 'orchestrator waiting for tasks')}</span>`;
+  let banner = '';
+  if (s.status === 'running' && !D.alive) banner = 'The autobuild process is not running. Run the same command again to continue from here.';
+  else if (s.result && s.status !== 'running') banner = `${mark(s.result.outcome)} · The orchestrator finished the run in ${turnLink(s.result.turn)}. ` +
+    (s.result.outcome === 'achieved' ? `The result is on branch <code>${esc(s.integration_branch)}</code>. ` : '') + `<button class="linkbtn" ${nav({view: 'notes'})}>Read its summary</button>`;
+  else if (s.error) banner = `${esc(s.status)}: ${esc(s.error)}. Run the same command again to continue.`;
+  setHTML($('#top'), `
+    <h1>${esc(s.name)}</h1>
+    ${mark(status)}
+    ${orch}
+    <div class="stats">
+      <div class="stat"><b>${done}/${open}</b><span>tasks done</span></div>
+      <div class="stat"><b>${live}</b><span>agents running</span></div>
+      <div class="stat"><b>${s.turns.length}</b><span>orchestrator turns</span></div>
+      <div class="stat"><b>${money(cost)}</b><span>cost</span></div>
+      <div class="stat"><b>${elapsed(s.created_at, s.ended_at || (runActive() ? '' : s.updated_at))}</b><span>since start</span></div>
+    </div>
+    ${banner ? `<div class="banner">${banner}</div>` : ''}`);
+  document.title = `${s.name} · ${status} · autobuild`;
+}
+function renderTabs() {
+  const s = S();
+  const tabs = [['run', `Run <span class="count">${s.task_order.length}</span>`], ['turns', `Orchestrator <span class="count">${s.turns.length}</span>`],
+    ['agents', `Agents <span class="count">${D.agents.length}</span>`], ['notes', 'Goal &amp; notes'], ['log', 'Log']];
+  setHTML($('#tabs'), tabs.map(([k, l]) => `<button class="${route.view === k ? 'on' : ''}" ${nav({view: k})}>${l}</button>`).join(''));
+}
+
+// ---------------------------------------------------------------- run view: the turns and the task graph
+
+function stripHTML() {
+  const s = S(), sel = +route.turn;
+  const chips = s.turns.map(t => {
+    const st = turnShown(t), e = turnEffect(t);
+    return `<button class="tchip c-${st} ${sel === t.n ? 'sel' : ''}" ${nav({turn: sel === t.n ? null : t.n, task: null, agent: null})} title="Turn ${t.n}: started by ${esc(whyShort(t))}">
+      <span class="n"><span class="dot ${st === 'running' ? 'live' : ''}"></span>Turn ${t.n}</span>
+      <span class="why">${esc(whyShort(t))}</span><span class="did">${st === 'running' ? 'deciding…' : esc(effectText(e))}</span></button>`;
+  });
+  if (runActive() && !runTurn() && s.turns.length) chips.push(`<span class="tchip ghost">waiting for<br>a task to finish</span>`);
+  return `<div class="strip"><span class="lbl">Orchestrator</span>${chips.join('<span class="arrow">→</span>') || '<span class="hint">not started yet</span>'}</div>`;
+}
+
+const NW = 236, NH = 96, GX = 84, GY = 16, LANE = 18;
+function renderRun() {
+  const s = S(), order = s.task_order, depth = {};
+  const depthOf = id => depth[id] ?? (depth[id] = T()[id].depends_on.length ? 1 + Math.max(...T()[id].depends_on.map(depthOf)) : 0);
+  order.forEach(depthOf);
+  const legend = ['waiting', 'queued', 'running', 'merging', 'done', 'failed', 'blocked', 'cancelled']
+    .map(k => mark(k, k === 'queued' ? 'ready' : k)).join('');
+  const head = stripHTML() + `<div class="legend">${legend}<span class="hint">✎ changes the repository and is merged when done; the others only report. "turn n" is the orchestrator turn that added the task. Select a turn to see what it changed.</span></div>`;
+  if (!order.length) return setHTML($('#view'), head + `<div class="empty">${runTurn() ? 'The orchestrator is working out what the run needs. Tasks appear here as it adds them.' : 'No tasks yet.'}</div>`);
+
+  // Columns of items. An edge that skips columns gets a lane in each column it crosses, so it is
+  // routed between the tasks there instead of behind them.
+  const edges = [], item = {}, col = depth;
+  const cols = Array.from({length: Math.max(...Object.values(depth)) + 1}, () => []);
+  for (const id of order) cols[col[id]].push(item[id] = {id, h: NH, from: []});
+  for (const id of order) for (const d of T()[id].depends_on) edges.push({a: d, b: id});
+  for (const e of edges) {
+    e.via = [];
+    for (let c = col[e.a] + 1; c < col[e.b]; c++) {
+      const lane = {h: LANE, from: [e.via[e.via.length - 1] || item[e.a]]};
+      cols[c].push(lane);
+      e.via.push(lane);
+    }
+    item[e.b].from.push(e.via[e.via.length - 1] || item[e.a]);
+  }
+  // order each column by where its inputs sit, to keep edges short and uncrossed
+  let H = 0;
+  cols.forEach((items, c) => {
+    items.forEach((it, i) => { it.i = i; it.bary = it.from.length ? it.from.reduce((n, f) => n + f.cy, 0) / it.from.length : 0; });
+    if (c) items.sort((p, q) => p.bary - q.bary || p.i - q.i);
+    const total = items.reduce((n, it) => n + it.h, 0) + GY * (items.length - 1);
+    let y = -total / 2;
+    for (const it of items) { it.top = y; it.cy = y + it.h / 2; y += it.h + GY; }
+    H = Math.max(H, total);
+  });
+  const W = cols.length * (NW + GX) - GX, X = c => c * (NW + GX), Y = y => y + H / 2;
+
+  const svg = edges.map(e => {
+    let x = X(col[e.a]) + NW, y = Y(item[e.a].cy), d = `M${x},${y}`;
+    const curve = (x2, y2) => { const mx = (x + x2) / 2; d += ` C${mx},${y} ${mx},${y2} ${x2},${y2}`; x = x2; y = y2; };
+    e.via.forEach((lane, k) => { curve(X(col[e.a] + 1 + k), Y(lane.cy)); x += NW; d += ` L${x},${y}`; });
+    curve(X(col[e.b]), Y(item[e.b].cy));
+    return `<path class="edge ${T()[e.a].status === 'done' ? 'met' : ''}" data-a="${e.a}" data-b="${e.b}" d="${d}"/>`;
+  }).join('');
+
+  const turn = s.turns[+route.turn - 1], touched = turn ? turnEffect(turn).touched : {};
+  const node = id => {
+    const t = T()[id], sh = shown(id), cost = unitCost(id), op = touched[id];
+    return `<button class="node c-${sh.status} ${route.task === id ? 'sel' : ''} ${op ? 'touched' : ''}" data-id="${id}" style="left:${X(col[id])}px;top:${Y(item[id].top)}px"
+        title="${esc(t.summary || t.error || '')}" ${nav({task: id, agent: null})}>
+      <div class="hd"><span class="id">${id}</span><span class="tag">${esc(t.kind)}${t.writes ? ' ✎' : ''}</span>
+        ${op ? `<span class="tag op by">${OPK[op]} ${op}</span>` : `<span class="by">turn ${t.added_turn}${t.attempt > 1 ? ` · try ${t.attempt}` : ''}</span>`}</div>
+      <div class="ti">${esc(t.title)}</div>
+      <div class="ft">${mark(sh.status, sh.label)}<span class="cost">${cost ? money(cost) : ''}</span></div></button>`;
+  };
+  setHTML($('#view'), head + `<div id="graph" class="${turn ? 'turnsel' : ''}" style="width:${W}px;height:${H}px"><svg width="${W}" height="${H}">${svg}</svg>${order.map(node).join('')}</div>`);
+}
+document.addEventListener('mouseover', e => {
+  const n = e.target.closest && e.target.closest('.node[data-id]'), g = $('#graph');
+  if (!g) return;
+  g.querySelectorAll('.hl, .rel').forEach(el => el.classList.remove('hl', 'rel'));
+  g.classList.toggle('focus', !!n);
+  if (!n) return;
+  n.classList.add('rel');
+  g.querySelectorAll('.edge').forEach(ed => {
+    if (ed.dataset.a !== n.dataset.id && ed.dataset.b !== n.dataset.id) return;
+    ed.classList.add('hl');
+    const other = g.querySelector(`.node[data-id="${ed.dataset.a === n.dataset.id ? ed.dataset.b : ed.dataset.a}"]`);
+    if (other) other.classList.add('rel');
+  });
+});
+
+// ---------------------------------------------------------------- what a turn did
+
+function opHTML(o, pre = '') {
+  const line = (k, html, cls = '') => `<div class="opline ${cls}"><span class="k">${k}</span><span class="x">${pre}${html}</span></div>`;
+  const why = o.reason ? ` <span class="why">· ${esc(o.reason)}</span>` : '';
+  if (o.error) return line('⚠', `<b>${esc(o.op)}</b>${o.task ? ' ' + esc(o.task) : ''} was refused: ${esc(o.error)}`, 'refused');
+  if (o.op === 'add_task') return line('+', `added ${taskLink(o.task)} <span class="tag">${esc(o.kind)}${o.writes ? ' ✎' : ''}</span> ${esc(o.title)}` +
+    (o.depends_on && o.depends_on.length ? ` <span class="why">· after ${o.depends_on.map(esc).join(', ')}</span>` : ''));
+  if (o.op === 'update_task') return line('~', `changed ${taskLink(o.task)}: ${esc((o.changed || []).join(', ').replace('depends_on', 'dependencies'))}`);
+  if (o.op === 'cancel_task') return line('✕', `cancelled ${taskLink(o.task)}${why}`);
+  if (o.op === 'retry_task') return line('↻', `retried ${taskLink(o.task)}${o.attempt ? ` (attempt ${o.attempt})` : ''}${why}`);
+  if (o.op === 'set_notes') return line('✎', `rewrote the <button class="linkbtn" ${nav({view: 'notes'})}>notes</button>`);
+  if (o.op === 'finish_run') return line('■', `finished the run: <b>${esc(String(o.outcome).replace('_', ' '))}</b>`);
+  return '';
+}
+function opsHTML(t) {
+  const reads = t.ops.filter(o => READS.has(o.op) && !o.error);
+  const looked = [...new Set(reads.map(o => o.op === 'get_run' ? 'the run' : o.op === 'get_task' ? o.task : 'agent ' + o.agent))];
+  const out = t.ops.filter(o => !READS.has(o.op) || o.error).map(o => opHTML(o));
+  if (looked.length) out.unshift(`<div class="opline read"><span class="k">◦</span><span class="x">looked at ${looked.map(esc).join(', ')}</span></div>`);
+  if (!out.length) return `<p class="hint">${t.status === 'running' ? 'Nothing yet.' : 'It did not look at or change the run.'}</p>`;
+  return `<div class="ops">${out.join('')}</div>`;
+}
+function whyHTML(t) {
+  if (t.reason === 'start') return '<p>The first turn: it was given the goal and an empty run.</p>';
+  const ev = t.events.map(e => `<div class="opline"><span class="k">${e.type === 'task_failed' ? '✕' : '✓'}</span><span class="x">${taskLink(e.task)} ${e.type === 'task_failed' ? 'failed' : 'finished'}<span class="why"> · ${esc(e.text)}</span></span></div>`).join('');
+  return `<div class="ops">${ev}</div>${t.idle ? '<p class="hint">Nothing was running and nothing could start.</p>' : ''}${ev || t.idle ? '' : '<p class="hint">Resumed.</p>'}`;
+}
+function turnMeta(t) {
+  const a = D.agents.find(x => x.id === t.agent) || {};
+  return `${clock(t.started_at)} · ${elapsed(t.started_at, t.ended_at || (turnShown(t) === 'running' ? '' : t.started_at))} · ${money(a.cost_usd)}`;
+}
+function renderTurns() {
+  const cards = S().turns.slice().reverse().map(t => `<div class="card ${+route.turn === t.n ? 'sel' : ''}">
+    <header><b>Turn ${t.n}</b>${mark(turnShown(t), turnShown(t) === 'running' ? 'deciding' : undefined)}<span class="hint">started by ${esc(whyShort(t))}</span>
+      <span class="rt">${turnMeta(t)} · <button class="linkbtn" ${nav({turn: t.n, task: null, agent: null})}>details</button> · <button class="linkbtn" ${nav({agent: t.agent, tab: 'transcript'})}>transcript</button></span></header>
+    <div>${opsHTML(t)}${t.summary ? `<div class="said">${md(t.summary)}</div>` : ''}${t.error ? `<p>${esc(t.error)}</p>` : ''}</div></div>`).join('');
+  setHTML($('#view'), `<div class="pad"><p class="hint" style="margin-top:0">Each turn is a fresh orchestrator instance. It is told what changed, looks at the run, edits it, and ends. Newest first.</p>
+    ${cards || '<div class="empty">The orchestrator has not started yet.</div>'}</div>`);
+}
+function renderTurn(n) {
+  const t = S().turns[n - 1];
+  if (!t) return ['', '<div class="empty">Unknown turn.</div>'];
+  const e = turnEffect(t), st = turnShown(t);
+  return [`<div class="crumbs"><span>Orchestrator</span><span class="tools"><button data-wide>⇔ width</button><button ${nav({turn: null})}>✕ close</button></span></div>
+      <h2>Turn ${t.n}</h2><div class="meta">${mark(st, st === 'running' ? 'deciding' : undefined)}<span>${turnMeta(t)}</span><span>${esc(effectText(e))}</span>
+        <button class="linkbtn" ${nav({agent: t.agent, tab: 'transcript'})}>transcript</button></div>`,
+    `<h3 style="margin-top:0">Why it was started</h3>${whyHTML(t)}
+      <h3>What it did to the run</h3>${opsHTML(t)}
+      <h3>What it said</h3>${t.summary ? md(t.summary) : `<p class="hint">${st === 'running' ? 'It is still deciding. The transcript shows what it is doing now.' : esc(t.error || 'It left no message.')}</p>`}`];
+}
+
+// ---------------------------------------------------------------- other views
+
+function agentRow(a) {
+  const st = agentShown(a);
+  return `<tr class="row ${route.agent === a.id ? 'sel' : ''}" ${nav({agent: a.id, tab: null})}>
+    <td class="mono">${esc(a.id)}</td><td>${esc(a.role)}</td><td>${esc(a.unit === 'orchestrator' ? '' : a.unit)}</td><td>${mark(st)}</td>
+    <td class="num">${clock(a.started_at)}</td><td class="num">${elapsed(a.started_at, a.ended_at || (st === 'running' ? '' : a.started_at))}</td>
+    <td class="num">${a.num_turns || ''}</td><td class="num">${a.cost_usd ? money(a.cost_usd) : ''}</td></tr>`;
+}
+function renderAgents() {
+  const roles = ['all', 'running', 'orchestrator', 'task', 'merge'];
+  const list = D.agents.filter(a => agentFilter === 'all' || (agentFilter === 'running' ? a.status === 'running' : a.role === agentFilter));
+  setHTML($('#view'), `<div class="filters">${roles.map(r => `<button class="chip ${agentFilter === r ? 'on' : ''}" data-filter="${r}">${r}</button>`).join('')}</div>
+    <table><tr><th>Agent</th><th>Role</th><th>Task</th><th>Status</th><th class="num">Started</th><th class="num">Duration</th><th class="num">Turns</th><th class="num">Cost</th></tr>
+    ${list.slice().reverse().map(agentRow).join('')}</table>
+    ${list.length ? '' : '<div class="empty">No agents yet.</div>'}`);
+}
+function renderNotes() {
+  const s = S();
+  const result = s.result ? `<div class="card"><header>${mark(s.result.outcome)}<b>How the orchestrator finished the run</b><span class="rt">${turnLink(s.result.turn)}</span></header><div>${md(s.result.summary)}</div></div>` : '';
+  setHTML($('#view'), `<div class="pad">${result}<h3 style="margin-top:0">Goal</h3>${md(plan.goal)}
+    <h3>The orchestrator's notes${s.notes_turn ? ` <span class="hint" style="text-transform:none;letter-spacing:0">· last rewritten in ${turnLink(s.notes_turn)}</span>` : ''}</h3>
+    ${s.notes ? md(s.notes) : '<p class="hint">Empty. The orchestrator keeps here what it understands about the goal, the definition of done, the facts so far and the plan. It is the only thing one instance passes to the next besides the run itself.</p>'}</div>`);
+}
+function renderLog() {
+  if (setHTML($('#view'), `<div class="pad"><pre>${esc(logText) || 'empty'}</pre></div>`)) $('#view').scrollTop = $('#view').scrollHeight;
+}
+
+// ---------------------------------------------------------------- drawer: a task
+
+function renderTask(id) {
+  const t = T()[id];
+  if (!t) return ['', '<div class="empty">Unknown task.</div>'];
+  const sh = shown(id), ags = agentsOf(id);
+  const dependents = S().task_order.filter(x => T()[x].depends_on.includes(id));
+  const kv = [['Kind', `${esc(t.kind)} · ${t.writes ? '✎ changes the repository, merged when done' : 'reports only, its checkout is discarded'}`],
+    ['Depends on', t.depends_on.map(taskLink).join(', ') || 'nothing'], ['Needed by', dependents.map(taskLink).join(', ') || 'nothing']];
+  if (t.branch) kv.push(['Branch', `<code>${esc(t.branch)}</code>`]);
+  if (t.head && t.base) kv.push(['Commits', t.head === t.base ? 'no changes' : `<code>${esc(t.base.slice(0, 10))}..${esc(t.head.slice(0, 10))}</code> ${t.merged ? '· merged' : '· not merged'}`]);
+  if (t.conflicts) kv.push(['Merge conflicts', t.conflicts.map(p => `<code>${esc(p)}</code>`).join(' ') + ' · resolved by an agent']);
+  if (t.started_at) kv.push(['Time', `${clock(t.started_at)} · ${elapsed(t.started_at, t.ended_at || (LIVE.has(sh.status) ? '' : t.started_at))}`]);
+  if (t.attempt > 1) kv.push(['Attempt', `${t.attempt}`]);
+  kv.push(['Cost', money(unitCost(id))]);
+  if (t.cancel_reason) kv.push(['Cancelled', `in ${turnLink(t.cancelled_turn)} · ${esc(t.cancel_reason)}`]);
+  if (t.error) kv.push(['Error', esc(t.error)]);
+  const pipe = ags.map(a => { const st = agentShown(a); return `<button class="prow" ${nav({agent: a.id, tab: null})}>
+    <span class="nm mono">${esc(a.id)}</span>${mark(st)}<span class="rt">${elapsed(a.started_at, a.ended_at || (st === 'running' ? '' : a.started_at))} · ${money(a.cost_usd)}</span></button>`; }).join('');
+  // everything the orchestrator did to this task, oldest first
+  const history = S().turns.flatMap(turn => turn.ops.filter(o => o.task === id && !READS.has(o.op))
+    .map(o => opHTML(o, `<span class="why">${turnLink(turn.n)} · </span>`))).join('');
+  const revs = plan.briefs[id] || [], at = Math.min(briefRev[id] ?? revs.length - 1, revs.length - 1);
+  const revChips = revs.length > 1 ? `<div class="filters" style="padding:0 0 8px">${revs.map((_, i) => `<button class="chip ${i === at ? 'on' : ''}" data-rev="${id}:${i}">version ${i + 1}${i === revs.length - 1 ? ' (in force)' : ''}</button>`).join('')}</div>` : '';
+  const past = (t.past || []).map(p => `<p class="hint">Attempt ${p.attempt} ${esc(p.status)}: ${esc(p.error || p.summary || '')}</p>`).join('');
+  return [`<div class="crumbs"><span>Task</span><span class="tools"><button data-wide>⇔ width</button><button ${nav({task: null, agent: null})}>✕ close</button></span></div>
+      <h2>${esc(id)} · ${esc(t.title)}</h2><div class="meta">${mark(sh.status, sh.label)}<span>added in ${turnLink(t.added_turn)}</span></div>`,
+    `${t.summary ? `<h3 style="margin-top:0">Result</h3><p>${esc(t.summary)}</p>` : ''}${past}
+      <dl class="kv">${kv.map(([k, val]) => `<dt>${k}</dt><dd>${val}</dd>`).join('')}</dl>
+      <h3>Agents</h3>${pipe ? `<div class="pipe">${pipe}</div>` : '<p class="hint">No agent has run for this yet.</p>'}
+      <h3>What the orchestrator did with it</h3><div class="ops">${history}</div>
+      <h3>Brief</h3>${revChips}${revs.length ? md(revs[at]) : '<p class="hint">Loading…</p>'}`];
+}
+
+// ---------------------------------------------------------------- drawer: an agent
+
+function loadAgent(meta) {
+  const key = `${meta.status}/${meta.attempts.length}`;
+  const hit = agentCache[meta.id];
+  if (hit && hit.key === key) return hit.data;
+  if (!hit || hit.key !== 'loading:' + key) {
+    agentCache[meta.id] = {key: 'loading:' + key, data: hit ? hit.data : null};
+    fetch('/api/agent/' + meta.id).then(r => r.json()).then(data => { agentCache[meta.id] = {key, data}; render(); });
+  }
+  return hit ? hit.data : null;
+}
+function renderAgent(id) {
+  const meta = D.agents.find(a => a.id === id);
+  if (!meta) return ['', '<div class="empty">Unknown agent.</div>'];
+  const data = loadAgent(meta), st = agentShown(meta), isOrch = meta.role === 'orchestrator';
+  const turn = isOrch ? S().turns.find(t => t.agent === id) : null;
+  const tabs = [['report', isOrch ? 'Message' : 'Report'], ['transcript', 'Transcript'], ['prompt', 'Prompt']];
+  if (data && data.result) tabs.push(['result', 'Result']);
+  tabs.push(['info', 'Info']);
+  const tab = route.tab || (meta.status === 'done' ? 'report' : 'transcript');
+  let body = '<div class="empty">Loading…</div>';
+  if (tab === 'transcript') body = '<div id="tx"></div>';
+  else if (data) {
+    if (tab === 'report') body = data.report ? md(data.report) : `<div class="empty">${meta.status === 'done' ? 'This agent left no report.' : 'The report is written when the agent finishes. The transcript shows what it is doing now.'}</div>`;
+    if (tab === 'prompt') body = md(data.prompt);
+    if (tab === 'result') body = `<pre>${esc(JSON.stringify(data.result, null, 2))}</pre>`;
+    if (tab === 'info') {
+      const cmd = `cd ${meta.cwd} && claude --resume ${meta.session_id}`;
+      const servers = meta.mcp_servers == null ? 'not started yet' : meta.mcp_servers.length ? meta.mcp_servers.map(esc).join(', ') : 'none';
+      body = `<dl class="kv"><dt>Role</dt><dd>${esc(meta.role)}</dd><dt>Model</dt><dd>${esc(meta.model)} · effort ${esc(meta.effort)}</dd>
+        <dt>Run tools</dt><dd>${meta.mcp ? 'yes: this agent can read and edit the run' : 'no: this agent cannot see or edit the run'}</dd>
+        <dt>MCP servers</dt><dd>${servers}</dd>
+        <dt>Working dir</dt><dd class="mono">${esc(meta.cwd)}</dd><dt>Session</dt><dd class="mono">${esc(meta.session_id)}</dd>
+        <dt>Files</dt><dd class="mono">${esc(D.run_dir)}/agents/${esc(meta.id)}/</dd>
+        <dt>Attempts</dt><dd>${meta.attempts.map(a => `#${a.n}${a.resume ? ' (resumed)' : ''} ${clock(a.started_at)}${a.error ? ' · ' + esc(a.error) : ''}`).join('<br>')}</dd>
+        <dt>Turns</dt><dd>${meta.num_turns}</dd><dt>Cost</dt><dd>${money(meta.cost_usd)}</dd></dl>
+        <h3>Open this session in Claude Code</h3><pre>${esc(cmd)}</pre>
+        ${data.stderr ? `<h3>stderr</h3><pre>${esc(data.stderr)}</pre>` : ''}`;
+    }
+  }
+  const up = turn ? `<button ${nav({turn: turn.n, task: null, agent: null, tab: null})}>turn ${turn.n}</button>`
+    : `<button ${nav({task: meta.unit, agent: null, tab: null})}>${esc(meta.unit)}</button>`;
+  const title = turn ? `Orchestrator · turn ${turn.n}` : `${esc((T()[meta.unit] || {}).title || meta.unit)} · ${esc(meta.role === 'merge' ? 'merge conflict' : meta.title || meta.role)}`;
+  return [`<div class="crumbs">${up}<span>/</span><span class="mono">${esc(meta.id)}</span>
+      <span class="tools"><button data-wide>⇔ width</button><button ${nav({agent: null, tab: null})}>✕ close</button></span></div>
+    <h2>${title}</h2>
+    <div class="meta">${mark(st)}<span>${clock(meta.started_at)} · ${elapsed(meta.started_at, meta.ended_at || (st === 'running' ? '' : meta.started_at))}</span><span>${meta.num_turns} turns</span><span>${money(meta.cost_usd)}</span>${meta.error ? `<span>${esc(meta.error)}</span>` : ''}</div>
+    <div class="dtabs">${tabs.map(([k, l]) => `<button class="${tab === k ? 'on' : ''}" ${nav({tab: k})}>${l}</button>`).join('')}</div>`, body];
+}
+
+// ---- transcript: appended to as the agent works
+
+const RUN_TOOL = /^mcp__autobuild__/;
+function toolSummary(name, input) {
+  input = input || {};
+  const v = input.command || input.file_path || input.pattern || input.description || input.query || input.url || input.skill || input.path
+    || [input.id, input.title, input.agent, input.outcome, input.reason].filter(Boolean).join(' · ') || '';
+  return String(v).split('\n')[0].slice(0, 200);
+}
+function toolBody(name, input) {
+  input = input || {};
+  if (name === 'Bash') return `<pre>${esc(input.command)}</pre>`;
+  if (name === 'Edit') return `<div class="hint mono">${esc(input.file_path)}</div>` + diffHTML(String(input.old_string || '').split('\n').map(l => '-' + l).concat(String(input.new_string || '').split('\n').map(l => '+' + l)).join('\n'));
+  if (name === 'Write') return `<div class="hint mono">${esc(input.file_path)}</div><pre>${esc(input.content)}</pre>`;
+  if (RUN_TOOL.test(name)) {         // an operation on the run: show its long text fields as text, not as escaped JSON
+    const {brief, notes, summary, ...rest} = input, long = brief || notes || summary;
+    return (Object.keys(rest).length ? `<pre>${esc(JSON.stringify(rest, null, 2))}</pre>` : '') + (long ? md(long) : '');
+  }
+  return `<pre>${esc(JSON.stringify(input, null, 2))}</pre>`;
+}
+function resultText(c) {
+  if (typeof c === 'string') return c;
+  if (Array.isArray(c)) return c.map(b => b.type === 'text' ? b.text : `[${b.type}]`).join('\n');
+  return c == null ? '' : JSON.stringify(c, null, 2);
+}
+function appendEvents(box, events) {
+  for (const e of events) {
+    const sub = e.parent ? ' sub' : '';
+    const add = (cls, html, tag = 'div') => { const el = document.createElement(tag); el.className = `ev ${cls}${sub}`; el.innerHTML = html; box.appendChild(el); return el; };
+    if (e.type === 'orchestrator') add('note', `attempt ${e.n}${e.resume ? ', resuming the session' : ''} · ${clock(e.timestamp)}`);
+    else if (e.type === 'system') add('note', `session ${esc(e.session_id)} · ${esc(e.model)}`);
+    else if (e.type === 'result') add('final', `${e.is_error ? 'Ended with an error' : 'Finished'}: ${e.num_turns} turns, ${dur((e.duration_ms || 0) / 1000)}, ${money(e.total_cost_usd)}${e.is_error ? `<pre>${esc(e.result || e.subtype)}</pre>` : ''}`);
+    else for (const b of e.content || []) {
+      if (b.type === 'text' && e.type === 'assistant') add('', md(b.text));
+      else if (b.type === 'text') add('tool', `<summary><b>prompt</b><span>${esc(b.text.slice(0, 160))}</span></summary><div>${md(b.text)}</div>`, 'details');
+      else if (b.type === 'thinking') { if ((b.thinking || '').trim()) add('tool think', `<summary><b>thinking</b><span>${esc(b.thinking.slice(0, 160))}</span></summary><div>${md(b.thinking)}</div>`, 'details'); }
+      else if (b.type === 'tool_use') {
+        const run = RUN_TOOL.test(b.name);
+        tx.tools[b.id] = add('tool' + (run ? ' run' : ''), `<summary><b>${run ? 'run · ' : ''}${esc(b.name.replace(RUN_TOOL, ''))}</b><span>${esc(toolSummary(b.name, b.input))}</span></summary><div>${toolBody(b.name, b.input)}</div>`, 'details');
+      }
+      else if (b.type === 'tool_result') {
+        const html = `<pre class="${b.is_error ? 'err' : ''}">${esc(resultText(b.content)) || '(no output)'}</pre>`;
+        const host = tx.tools[b.tool_use_id];
+        if (host) host.lastElementChild.insertAdjacentHTML('beforeend', html); else add('tool', `<summary><b>result</b></summary><div>${html}</div>`, 'details');
+      }
+    }
+  }
+}
+async function pumpTranscript() {
+  const box = $('#tx');
+  if (!box || !route.agent) { tx = null; return; }
+  if (!tx || tx.id !== route.agent || tx.box !== box) { tx = {id: route.agent, next: 0, tools: {}, box, busy: false}; box.innerHTML = ''; }
+  if (tx.busy) return;
+  tx.busy = true;
+  const mine = tx;
+  try {
+    for (;;) {
+      const r = await (await fetch(`/api/agent/${mine.id}/events?from=${mine.next}`)).json();
+      if (tx !== mine) return;
+      const pane = box.parentElement, stick = pane.scrollHeight - pane.scrollTop - pane.clientHeight < 80 && mine.next > 0;
+      appendEvents(box, r.events);
+      mine.next = r.next;
+      if (stick) pane.scrollTop = pane.scrollHeight;
+      if (!r.more) break;
+    }
+    if (!box.children.length) box.innerHTML = '<div class="empty">Nothing yet.</div>';
+    else if (box.firstElementChild.classList.contains('empty') && box.children.length > 1) box.firstElementChild.remove();
+  } finally { mine.busy = false; }
+}
+
+// ---------------------------------------------------------------- render loop
+
+function render() {
+  if (!D || !D.state || !D.state.name) return setHTML($('#view'), '<div class="empty">No run state found.</div>');
+  renderTop();
+  renderTabs();
+  ({run: renderRun, turns: renderTurns, agents: renderAgents, notes: renderNotes, log: renderLog}[route.view] || renderRun)();
+  const drawer = $('#drawer');
+  drawer.hidden = !(route.agent || route.task || route.turn);
+  if (!drawer.hidden) {
+    const [head, body] = route.agent ? renderAgent(route.agent) : route.task ? renderTask(route.task) : renderTurn(+route.turn);
+    setHTML($('#dhead'), head);
+    const key = [route.turn, route.task, route.agent, route.tab].join('|'), at = $('#dbody').scrollTop;
+    if (setHTML($('#dbody'), body)) $('#dbody').scrollTop = key === bodyKey ? at : 0;
+    bodyKey = key;
+  }
+  pumpTranscript();
+  tick();
+}
+async function poll() {
+  try {
+    D = await (await fetch('/api/state')).json();
+    const key = [D.state.rev, (D.state.task_order || []).length].join('/');
+    if (key !== planKey) { planKey = key; plan = await (await fetch('/api/plan')).json(); }
+    if (route.view === 'log') logText = (await (await fetch('/api/log')).json()).log;
+    render();
+  } catch (err) {
+    console.warn('poll failed', err);
+  } finally {
+    setTimeout(poll, 2000);
+  }
+}
+document.addEventListener('click', e => {
+  const wide = e.target.closest('[data-wide]');
+  if (wide) return void $('#drawer').classList.toggle('wide');
+  const f = e.target.closest('[data-filter]');
+  if (f) { agentFilter = f.dataset.filter; return render(); }
+  const rev = e.target.closest('[data-rev]');
+  if (rev) { const [id, i] = rev.dataset.rev.split(':'); briefRev[id] = +i; return render(); }
+  const el = e.target.closest('[data-nav]');
+  if (el) { e.preventDefault(); go(JSON.parse(el.dataset.nav)); if (route.view === 'log') poll0(); }
+});
+async function poll0() { logText = (await (await fetch('/api/log')).json()).log; render(); }
+poll();
+</script>
+</body>
+</html>
